@@ -1,0 +1,38 @@
+# Home Assistant's own spoken answers, for requests it handles without Grok.
+# Written for a voice to read: units in full and whole numbers, so it never says "degrees C".
+language: en
+responses:
+  intents:
+    HassGetWeather:
+      default: >
+        {% set weather_condition = {
+          'clear': 'and clear',
+          'clear-night': 'and clear',
+          'cloudy': 'and cloudy',
+          'exceptional': 'and exceptional',
+          'fog': 'with fog',
+          'hail': 'with hail',
+          'lightning': 'with lightning',
+          'lightning-rainy': 'with lightning and rain',
+          'partlycloudy': 'and partly cloudy',
+          'pouring': 'and pouring rain',
+          'rainy': 'and raining',
+          'snowy': 'and snowing',
+          'snowy-rainy': 'with snow and rain',
+          'sunny': 'and sunny',
+          'windy': 'and windy',
+          'windy-variant': 'with wind and clouds'
+        } %}
+        {% set unit = state.attributes.get('temperature_unit') %}
+        It's {{ state.attributes.get('temperature') | round(0) | int }} {{ 'degrees Celsius' if unit == '°C' else 'degrees Fahrenheit' if unit == '°F' else unit }} {{ weather_condition.get((state.state | string).lower(), "") }} out there.
+    HassClimateGetTemperature:
+      default: >
+        {% set current_temperature = state_attr(state.entity_id, 'current_temperature') %}
+        {% set temperature = state.state if current_temperature is none else current_temperature %}
+        {% if temperature | float(none) is none %}
+        It's set to {{ temperature }}.
+        {% elif temperature | float | round(0) | int == 1 %}
+        It's 1 degree Celsius.
+        {% else %}
+        It's {{ temperature | float | round(0) | int }} degrees Celsius.
+        {% endif %}

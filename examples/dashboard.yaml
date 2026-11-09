@@ -1,0 +1,66 @@
+# Paste this into the dashboard's raw configuration editor, then replace every example with your own.
+# Find your entity names in Home Assistant under Developer Tools > States.
+title: Echo Home
+views:
+  - title: Home
+    path: home
+    panel: true
+    cards:
+      - type: custom:echo-home-card
+        # buddy = a little robot with a body, face = the whole screen is its face
+        robot: face
+        # Your voice device. All four usually share the same start to their names.
+        satellite: assist_satellite.your_device_assist_satellite
+        mute: switch.your_device_mute
+        timer_ringing: binary_sensor.your_device_timer_ringing
+        stop_ringing: button.your_device_stop_ringing
+        weather: weather.forecast_home
+        # A speaker to control when nothing else is playing. Spotify and Music Assistant are found automatically.
+        player: media_player.your_speaker
+        # Asleep and dimmed between these times. Set both to false to turn it off.
+        night_start: "22:30"
+        night_end: "07:00"
+        # The switches behind one tap. Add or remove as many as you like.
+        lights:
+          - entity: light.your_first_light
+            name: Bedroom
+          - entity: light.your_second_light
+            name: Kitchen
+        # Everything below is optional, and shown with its usual setting.
+        # moments: true            # little idle animations
+        # lyrics: true             # synced lyrics while music plays
+        # lyric_reactions: true    # the robot reacts to words in the lyrics
+        # album_colours: true      # screen colours from the album cover
+        # now_playing: true        # cover, title, progress and buttons while music plays
+        # home_events: true        # greets arrivals, reacts to the heating, gets sleepy at bedtime
+        # night_clock: true        # at night, a big dark clock with the robot small underneath
+        # speech_wait: false       # true for slow voices like Fable: words and mouth wait for the voice
+        # speech_wait_adjust: 0    # seconds; raise it if words appear before the voice, lower it if after
+        # people: [person.you]     # who to greet; everyone if left out
+        # heating: [climate.home]  # which thermostats to watch; all of them if left out
+        # alerts: true             # timer and reminder pop-ups (needs the echo_robot add-on)
+
+  # A version for a PC, which you can talk to: see docs/PC.md. It's a hidden page, so the screen above doesn't change.
+  - title: Robot on PC
+    path: desktop
+    panel: true
+    subview: true
+    cards:
+      - type: custom:echo-home-card
+        robot: face
+        satellite: assist_satellite.your_device_assist_satellite
+        mute: switch.your_device_mute
+        timer_ringing: binary_sensor.your_device_timer_ringing
+        stop_ringing: button.your_device_stop_ringing
+        weather: weather.forecast_home
+        player: media_player.your_speaker
+        night_start: "22:30"
+        night_end: "07:00"
+        talk: true      # hold Space, or click the mic button, to talk
+        desktop: true   # scale up to fill a big window
+        chime: true     # chime here when a timer or reminder goes off
+        lights:
+          - entity: light.your_first_light
+            name: Bedroom
+          - entity: light.your_second_light
+            name: Kitchen

@@ -1,0 +1,53 @@
+alias: Play music on the Echo
+description: >-
+  Plays music on the Echo through Music Assistant. Use this whenever asked to play music, unless a
+  different speaker is named, or it's a radio station (use "Play radio on the Echo" for those). It needs an exact name, not a description. If the request is vague, like
+  a decade, mood or genre, choose one real, well-known song that fits, and give its exact title and artist.
+  After calling it, just confirm briefly what's playing.
+mode: single
+fields:
+  title:
+    name: Title
+    description: Only the exact name of the song, album, artist or playlist. Never include "by" and the artist here.
+    required: true
+    example: Golden Brown
+    selector:
+      text:
+  artist:
+    name: Artist
+    description: The artist of the song or album, if known. Leave out for an artist or playlist.
+    required: false
+    example: The Stranglers
+    selector:
+      text:
+  media_type:
+    name: Kind of music
+    description: One of track, album, artist or playlist. Use track unless asked for something else.
+    required: false
+    example: track
+    selector:
+      select:
+        options:
+          - track
+          - album
+          - artist
+          - playlist
+sequence:
+  - if: "{{ artist is defined and artist | length > 0 }}"
+    then:
+      - action: music_assistant.play_media
+        target:
+          entity_id: media_player.echo_show_example
+        data:
+          media_id: "{{ title }}"
+          artist: "{{ artist }}"
+          media_type: "{{ media_type | default('track') }}"
+          enqueue: replace
+    else:
+      - action: music_assistant.play_media
+        target:
+          entity_id: media_player.echo_show_example
+        data:
+          media_id: "{{ title }}"
+          media_type: "{{ media_type | default('track') }}"
+          enqueue: replace

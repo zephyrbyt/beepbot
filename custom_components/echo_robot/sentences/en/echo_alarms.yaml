@@ -1,0 +1,54 @@
+# Alarm requests understood on the server, so the words don't go to the chat assistant.
+# The time is worked out by custom_components/echo_robot/words.py: for an alarm, "at 7" means 7 am.
+language: en
+# Speech recognition sometimes adds a word at the start ("So wake me up..."), so a filler word or two
+# there is fine, and so is "please" or "thanks" at the end.
+expansion_rules:
+  filler: "[so|and|okay|ok|um|uh|erm|er|oh|well|right|yeah|yes|hey|alright|now|actually]"
+  thanks: "[please|thanks|thank you]"
+intents:
+  EchoAlarmSet:
+    data:
+      - sentences:
+          - "<filler> <filler> [please] wake me [up] {alarm}"
+          - "<filler> <filler> (can|could|will|would) you [please] wake me [up] {alarm}"
+          - "<filler> <filler> [please] (set|make|create|add) [me] [an|a|my|the] [wake up|wake-up] alarm {alarm}"
+          - "<filler> <filler> (can|could|will|would) you (set|make) [me] [an|a] [wake up|wake-up] alarm {alarm}"
+  EchoAlarmList:
+    data:
+      - sentences:
+          - "<filler> <filler> (when|what time) is my [wake up|wake-up] alarm [set for] <thanks>"
+          - "<filler> <filler> (do I have|have I got|is there) [an|any] alarm[s] [set] <thanks>"
+          - "<filler> <filler> what alarms (do I have|have I got|are set) <thanks>"
+          - "<filler> <filler> what time am I getting up [tomorrow] <thanks>"
+  EchoAlarmStop:
+    data:
+      - sentences:
+          - "<filler> <filler> (cancel|delete|remove|clear|turn off|switch off) all [of] [my|the] alarms <thanks>"
+          - "<filler> <filler> (cancel|delete|remove|clear|turn off|switch off) my alarms <thanks>"
+        slots:
+          everything: "yes"
+      - sentences:
+          - "<filler> <filler> I'm (up|awake) <thanks>"
+          - "<filler> <filler> I am (up|awake) <thanks>"
+          - "<filler> <filler> (okay|ok) I'm (up|awake) <thanks>"
+        slots:
+          awake: "yes"
+      # How speech recognition sometimes hears "I'm up". Only stops an alarm; otherwise it just says hello.
+      - sentences:
+          - "<filler> <filler> (hi|hey|high) (mark|marc|mac|marked) <thanks>"
+        slots:
+          awake: "yes"
+          soundalike: "yes"
+      - sentences:
+          - "<filler> <filler> (stop|dismiss|silence|turn off|switch off|cancel|delete|remove|clear) [the|my|that] [wake up|wake-up] alarm <thanks>"
+          - "<filler> <filler> (cancel|delete|remove|clear|turn off|switch off) [my|the] alarm (for|at) {alarm}"
+          - "<filler> <filler> (cancel|delete|remove|clear|turn off|switch off) [my|the] {alarm} alarm <thanks>"
+  EchoAlarmSnooze:
+    data:
+      - sentences:
+          - "<filler> <filler> snooze [the|my|that] [alarm|reminder] <thanks>"
+          - "<filler> <filler> (five|5) more minutes <thanks>"
+lists:
+  alarm:
+    wildcard: true

@@ -1,0 +1,22 @@
+# Robot Home: the robot and your home's controls, for the Home Assistant app on an iPad or iPhone.
+# Paste this into a new dashboard's raw configuration editor, then replace the examples with your own.
+title: Robot Home
+views:
+  - title: Home
+    path: home
+    panel: true
+    cards:
+      - type: custom:echo-mobile-card
+        # Talking from the iPad or iPhone counts as coming from this voice device, so "set a timer" rings there.
+        satellite: assist_satellite.your_device_assist_satellite
+        weather: weather.forecast_home
+        # The robot sleeps between these times (it still wakes up when you use it).
+        night_start: "22:30"
+        night_end: "07:00"
+        # What shows to begin with. Anything else is added with the cog, on each iPad or iPhone.
+        # Doorbells, Music Assistant players and scenes are found by themselves.
+        tiles:
+          - entity: light.your_first_light
+            name: Bedroom
+          - entity: light.your_second_light
+            name: Kitchen

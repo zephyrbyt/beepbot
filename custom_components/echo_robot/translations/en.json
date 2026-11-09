@@ -1,0 +1,60 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Beepbot",
+        "description": "The robot face for your Home Assistant screen. You can change all of this later with Configure. After saving, add the card to a dashboard: see the README.",
+        "data": {
+          "announce": "Say reminders and alarms on",
+          "wake_lights": "Wake-up lights",
+          "wake_minutes": "Wake-up light fade (minutes, 0 for none)",
+          "lyrics": "Lyrics for what is playing",
+          "lyrics_sources": "Lyrics sources",
+          "phrases": "Understand reminder and alarm requests on this server"
+        },
+        "data_description": {
+          "announce": "The voice devices (your Echo) that say reminders and alarms out loud.",
+          "wake_lights": "Lights that come up slowly before an alarm. Only lights that are off are used.",
+          "lyrics": "While music plays, Home Assistant sends the song's title, artist, album and length to lyrics services. The screen itself contacts none.",
+          "lyrics_sources": "Open uses LRCLIB only. All adds Better Lyrics, Apple Music lyrics through Paxsenix, and NetEase: more songs word by word, but they are unofficial and could stop working.",
+          "phrases": "Copies the reminder, alarm and weather phrases into custom_sentences/en, so these requests are answered here instead of going to a chat assistant."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Beepbot is already set up. Use Configure to change it.",
+      "set_in_yaml": "Beepbot is set up in configuration.yaml. Change it there, or remove that section and restart to use this page."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Beepbot settings",
+        "description": "Changes apply after Home Assistant restarts.",
+        "data": {
+          "announce": "Say reminders and alarms on",
+          "wake_lights": "Wake-up lights",
+          "wake_minutes": "Wake-up light fade (minutes, 0 for none)",
+          "lyrics": "Lyrics for what is playing",
+          "lyrics_sources": "Lyrics sources",
+          "phrases": "Understand reminder and alarm requests on this server"
+        },
+        "data_description": {
+          "announce": "The voice devices (your Echo) that say reminders and alarms out loud.",
+          "wake_lights": "Lights that come up slowly before an alarm. Only lights that are off are used.",
+          "lyrics": "While music plays, Home Assistant sends the song's title, artist, album and length to lyrics services. The screen itself contacts none.",
+          "lyrics_sources": "Open uses LRCLIB only. All adds Better Lyrics, Apple Music lyrics through Paxsenix, and NetEase: more songs word by word, but they are unofficial and could stop working.",
+          "phrases": "Copies the reminder, alarm and weather phrases into custom_sentences/en, so these requests are answered here instead of going to a chat assistant."
+        }
+      }
+    }
+  },
+  "selector": {
+    "lyrics_sources": {
+      "options": {
+        "all": "All (more word-by-word lyrics)",
+        "open": "Open only (LRCLIB)"
+      }
+    }
+  }
+}

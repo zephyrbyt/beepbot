@@ -1,0 +1,42 @@
+alias: Play radio shortcut
+description: >-
+  Plays radio stations straight away, without asking Grok: "play Heart", "put on Radio 2",
+  "play Jazz FM radio", "tune into Capital", "play the radio". Uses the "Play radio on the Echo" script.
+mode: restart
+triggers:
+  # Well-known stations, said on their own: "play Heart", "put on Capital".
+  - trigger: conversation
+    id: named
+    command:
+      - "[(so|and|okay|ok|um|uh|oh|hey)] [please] (play|put on|turn on|switch to|listen to|tune in to|tune into|tune to) [the] (heart|hart|heart fm|heart 70s|heart 80s|heart 90s|heart 70's|heart 80's|heart 90's|heart seventies|heart eighties|heart nineties|heart dance|capital|capital fm|capital xtra|capital extra|capital dance|smooth|smooth fm|smooth chill|classic fm|lbc|lbc news|kiss|kiss fm|kisstory|magic|magic fm|absolute|absolute 80s|absolute 90s|absolute 80's|absolute 90's|absolute eighties|absolute nineties|greatest hits|virgin|talksport|talk sport|1xtra|one xtra|five live|5 live|six music|6 music) [radio] [(please|thanks)]"
+      - "[(so|and|okay|ok|um|uh|oh|hey)] [please] (play|put on|turn on|switch to|listen to|tune in to|tune into|tune to) [the] bbc {station} [(please|thanks)]"
+  # "Radio" said: "play Heart radio", "put on the radio station Jazz FM", "play Radio 2".
+  - trigger: conversation
+    id: radio_after
+    command:
+      - "[(so|and|okay|ok|um|uh|oh|hey)] [please] (play|put on|turn on|switch to|listen to|tune in to|tune into|tune to) [the] {station} radio [station] [(please|thanks)]"
+  - trigger: conversation
+    id: radio_before
+    command:
+      - "[(so|and|okay|ok|um|uh|oh|hey)] [please] (play|put on|turn on|switch to|listen to|tune in to|tune into|tune to) [the] radio station {station}"
+      - "[(so|and|okay|ok|um|uh|oh|hey)] [please] (play|put on|turn on|switch to|listen to|tune in to|tune into|tune to) radio {station}"
+  # "Play the radio": your favourite station (set in the script).
+  - trigger: conversation
+    id: any
+    command:
+      - "[(so|and|okay|ok|um|uh|oh|hey)] [please] (play|put on|turn on|switch on|tune in to|tune into) [the|some] radio [(please|thanks)]"
+actions:
+  - variables:
+      station: >-
+        {% if trigger.id == 'radio_before' %}radio {{ trigger.slots.station }}
+        {% elif trigger.id == 'radio_after' %}{% set s = trigger.slots.station | lower | trim %}{{ '' if s in ['some', 'the', 'a', 'my', 'any'] else s ~ ' radio' }}
+        {% elif trigger.id == 'any' %}
+        {% elif trigger.slots.station is defined %}bbc {{ trigger.slots.station }}
+        {% else %}{{ trigger.sentence | lower | regex_replace('^(so|and|okay|ok|um|uh|oh|hey)[ ,]+', '') | regex_replace('^(please )?(play|put on|turn on|switch to|listen to|tune in to|tune into|tune to) (the )?', '') }}{% endif %}
+  - action: script.play_radio_on_the_echo
+    data:
+      station: "{{ station | trim }}"
+    response_variable: radio
+  - set_conversation_response: >-
+      {% if radio.found %}Here's {{ radio.name }}.
+      {% else %}Sorry, I couldn't find {{ radio.name or 'that station' }}.{% endif %}

@@ -1,0 +1,37 @@
+# Reminder requests understood on the server, so the words don't go to the chat assistant.
+# The time is worked out by custom_components/echo_robot/words.py.
+language: en
+# Speech recognition sometimes adds a word at the start ("So wake me up..."), so a filler word or two
+# there is fine, and so is "please" or "thanks" at the end.
+expansion_rules:
+  filler: "[so|and|okay|ok|um|uh|erm|er|oh|well|right|yeah|yes|hey|alright|now|actually]"
+  thanks: "[please|thanks|thank you]"
+intents:
+  EchoReminderAdd:
+    data:
+      - sentences:
+          - "<filler> <filler> [please] remind me {reminder}"
+          - "<filler> <filler> (can|could|will|would) you [please] remind me {reminder}"
+          - "<filler> <filler> (set|make|create|add) [me] [a] reminder {reminder}"
+          - "<filler> <filler> (can|could|will|would) you (set|make|create|add) [me] [a] reminder {reminder}"
+  EchoReminderList:
+    data:
+      - sentences:
+          - "<filler> <filler> what (are|is|'s) [all] my reminders <thanks>"
+          - "<filler> <filler> what reminders (do I have|have I got|are there|are set) <thanks>"
+          - "<filler> <filler> (do|have) I (have|got) any reminders <thanks>"
+          - "<filler> <filler> (list|read|tell me) [all] [of] my reminders <thanks>"
+          - "<filler> <filler> [are there] any reminders <thanks>"
+  EchoReminderCancel:
+    data:
+      - sentences:
+          - "<filler> <filler> (cancel|delete|remove|clear) all [of] [my|the] reminders <thanks>"
+        slots:
+          everything: "yes"
+      - sentences:
+          - "<filler> <filler> (cancel|delete|remove|clear|dismiss|stop) [my|the|that] reminder <thanks>"
+          - "<filler> <filler> (cancel|delete|remove|clear) [my|the] reminder (to|about|for) {reminder}"
+          - "<filler> <filler> (cancel|delete|remove|clear) [my|the] {reminder} reminder <thanks>"
+lists:
+  reminder:
+    wildcard: true

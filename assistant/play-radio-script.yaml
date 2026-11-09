@@ -1,0 +1,212 @@
+alias: Play radio on the Echo
+description: >-
+  Plays a live radio station on the Echo through Music Assistant (Radio Browser). Use this, not
+  "Play music on the Echo", whenever asked for a radio station, like Heart, Capital, Kiss, Classic FM
+  or BBC Radio 2. Give just the station's name. After calling it, just confirm briefly what's on.
+mode: restart
+fields:
+  station:
+    name: Station
+    description: Only the radio station's name, like Heart or BBC Radio 2.
+    required: true
+    example: Heart
+    selector:
+      text:
+sequence:
+  - variables:
+      player: media_player.echo_show_example
+      # Said as "play the radio", with no station.
+      favourite: heart
+      # The usual name for each station -> [its Radio Browser id, its name there, what to call it].
+      # Radio Browser has dozens of stations called "Heart" something, so the main ones are pinned here.
+      # Anything not listed is looked up by name.
+      stations:
+        heart: ["283402b5-dc2e-11e9-a8ba-52543be04c81", "Heart UK", "Heart"]
+        hart: ["283402b5-dc2e-11e9-a8ba-52543be04c81", "Heart UK", "Heart"]
+        heart uk: ["283402b5-dc2e-11e9-a8ba-52543be04c81", "Heart UK", "Heart"]
+        heart fm: ["283402b5-dc2e-11e9-a8ba-52543be04c81", "Heart UK", "Heart"]
+        heart 70s: ["702a65d7-3fec-405d-b224-b6c47b87c407", "Heart 70's", "Heart 70s"]
+        heart 80s: ["c4077677-dc2f-11e9-a8ba-52543be04c81", "Heart 80s", "Heart 80s"]
+        heart 90s: ["52bb00fe-dc31-11e9-a8ba-52543be04c81", "Heart 90s", "Heart 90s"]
+        heart dance: ["fa76f16f-dc31-11e9-a8ba-52543be04c81", "Heart Dance", "Heart Dance"]
+        capital: ["57a76f0a-8f41-419e-9001-ecdbb19886e0", "Capital UK", "Capital"]
+        capital fm: ["57a76f0a-8f41-419e-9001-ecdbb19886e0", "Capital UK", "Capital"]
+        capital uk: ["57a76f0a-8f41-419e-9001-ecdbb19886e0", "Capital UK", "Capital"]
+        capital xtra: ["d1bc420f-6aaa-426b-a810-b496622717d6", "Capital XTRA", "Capital Xtra"]
+        capital extra: ["d1bc420f-6aaa-426b-a810-b496622717d6", "Capital XTRA", "Capital Xtra"]
+        capital dance: ["bee4aa5e-e55c-499d-9bbd-75ad1b9c76b9", "Capital Dance", "Capital Dance"]
+        smooth: ["http://media-ice.musicradio.com/SmoothUKMP3", "Smooth UK", "Smooth"]
+        smooth fm: ["http://media-ice.musicradio.com/SmoothUKMP3", "Smooth UK", "Smooth"]
+        smooth chill: ["478fd7f4-dc36-11e9-a8ba-52543be04c81", "Smooth Chill", "Smooth Chill"]
+        classic fm: ["32da2113-229c-11e9-a80b-52543be04c81", "Classic FM", "Classic FM"]
+        lbc: ["963ad02f-0601-11e8-ae97-52543be04c81", "LBC London (National stream)", "LBC"]
+        l b c: ["963ad02f-0601-11e8-ae97-52543be04c81", "LBC London (National stream)", "LBC"]
+        lbc news: ["8e32c763-b926-4e57-9b8f-d60f1c5b48e3", "LBC News", "LBC News"]
+        radio x: ["9617bbd8-0601-11e8-ae97-52543be04c81", "Radio X", "Radio X"]
+        kiss: ["0f1a8621-d35a-4073-83d3-7ee14207a9a9", "KISS - The Best Vibes & Energy", "Kiss"]
+        kiss fm: ["0f1a8621-d35a-4073-83d3-7ee14207a9a9", "KISS - The Best Vibes & Energy", "Kiss"]
+        kisstory: ["6498b905-d629-40b3-89f0-6561c1129f99", "KISSTORY", "Kisstory"]
+        kiss story: ["6498b905-d629-40b3-89f0-6561c1129f99", "KISSTORY", "Kisstory"]
+        magic: ["172d8c95-fecd-40b7-af6f-9cdf4e8829e4", "Magic Radio UK", "Magic"]
+        magic fm: ["172d8c95-fecd-40b7-af6f-9cdf4e8829e4", "Magic Radio UK", "Magic"]
+        absolute: ["942218e4-32f2-4131-8a73-e3432a8cf4d0", "Absolute Radio", "Absolute Radio"]
+        absolute 80s: ["c6c204d3-3ffd-4e85-b0f9-29bf6de7ddf4", "Absolute Radio 80s", "Absolute 80s"]
+        absolute 90s: ["141e0cdb-5e31-40ad-955d-2c2c006c30b8", "Absolute Radio 90s", "Absolute 90s"]
+        greatest hits: ["1bfae443-4fa5-45ed-92a5-8aecd6a70756", "Greatest Hits Radio", "Greatest Hits Radio"]
+        hits: ["0f8f58d2-07e3-4ddb-af14-918a3e90369a", "Hits Radio UK", "Hits Radio"]
+        virgin: ["723e042f-3c2f-4562-b8fa-3f9a8d31cf3e", "VIRGIN RADIO UK: Rock‘n’Roll Radio From The Top Of The Tower", "Virgin Radio"]
+        times: ["05d6f5d1-827c-4cc4-8845-175bc33af435", "Times Radio", "Times Radio"]
+        talksport: ["9f5d0645-ae1e-4e9f-9b2f-91fa63d5b1fa", "talkSPORT", "Talksport"]
+        talk sport: ["9f5d0645-ae1e-4e9f-9b2f-91fa63d5b1fa", "talkSPORT", "Talksport"]
+        talksport 2: ["fecf5be0-e69b-46fa-9a47-0029ae4849e0", "Talksport 2", "Talksport 2"]
+        talk sport 2: ["fecf5be0-e69b-46fa-9a47-0029ae4849e0", "Talksport 2", "Talksport 2"]
+        radio 1: ["a740cc4c-9563-4fbe-a13f-e7f9e89b7441", "BBC Radio 1 (128k)", "BBC Radio 1"]
+        radio 1 dance: ["https://a.files.bbci.co.uk/ms6/live/3441A116-B12E-4D2F-ACA8-C1984642FA4B/audio/simulcast/hls/uk/pc_hd_abr_v2/ak/bbc_radio_one_dance.m3u8", "BBC Radio 1 Dance", "Radio 1 Dance"]
+        1xtra: ["308d38c6-e8a4-41e9-8ffe-9be2623826a4", "BBC Radio 1Xtra (128k)", "1Xtra"]
+        1 xtra: ["308d38c6-e8a4-41e9-8ffe-9be2623826a4", "BBC Radio 1Xtra (128k)", "1Xtra"]
+        1 extra: ["308d38c6-e8a4-41e9-8ffe-9be2623826a4", "BBC Radio 1Xtra (128k)", "1Xtra"]
+        radio 1xtra: ["308d38c6-e8a4-41e9-8ffe-9be2623826a4", "BBC Radio 1Xtra (128k)", "1Xtra"]
+        radio 1 extra: ["308d38c6-e8a4-41e9-8ffe-9be2623826a4", "BBC Radio 1Xtra (128k)", "1Xtra"]
+        radio 2: ["3606ef8c-cd58-4440-8c47-dbf1e0cacdac", "BBC Radio 2 (128k)", "BBC Radio 2"]
+        radio 3: ["03e68f6d-1ca3-459f-891a-c55d84711646", "BBC Radio 3 (128k)", "BBC Radio 3"]
+        radio 4: ["19621204-3051-48ea-ba58-1de4e02d034f", "BBC Radio 4", "BBC Radio 4"]
+        radio 4 extra: ["ccd9d009-b369-4451-9ebb-a2138bed734f", "BBC Radio 4 Extra (128k)", "Radio 4 Extra"]
+        radio 5: ["22cf6ca2-cb22-46e3-bc75-ae0f8edc4e4b", "BBC Radio 5 Live (UK)", "5 Live"]
+        radio 5 live: ["22cf6ca2-cb22-46e3-bc75-ae0f8edc4e4b", "BBC Radio 5 Live (UK)", "5 Live"]
+        5 live: ["22cf6ca2-cb22-46e3-bc75-ae0f8edc4e4b", "BBC Radio 5 Live (UK)", "5 Live"]
+        radio 6: ["1c6dcd6f-88c6-4fd4-8191-078435168e85", "BBC Radio 6 Music", "6 Music"]
+        radio 6 music: ["1c6dcd6f-88c6-4fd4-8191-078435168e85", "BBC Radio 6 Music", "6 Music"]
+        6 music: ["1c6dcd6f-88c6-4fd4-8191-078435168e85", "BBC Radio 6 Music", "6 Music"]
+        # Your local stations go here, in the same way: the name you say, then the Radio Browser station id (or a
+        # stream address), the name to search for, and the name to show. For example:
+        # heart east: ["<station id from radio-browser.info>", "Heart East", "Heart East"]
+      # Tidies what was heard: "BBC Radio One." -> "bbc radio 1", "Heart eighties" -> "heart 80s".
+      heard: >-
+        {% set t = (station | default('') | string | lower) %}
+        {% set t = t | regex_replace("[’'`]", '') | regex_replace('[^a-z0-9 ]', ' ') %}
+        {% set words = {'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5', 'six': '6',
+           'seventies': '70s', 'eighties': '80s', 'nineties': '90s', '70 s': '70s', '80 s': '80s', '90 s': '90s'} %}
+        {% set ns = namespace(t=t) %}
+        {% for w, n in words.items() %}{% set ns.t = ns.t | regex_replace('\\b' ~ w ~ '\\b', n) %}{% endfor %}
+        {% set t = ns.t | regex_replace('\\s+', ' ') | trim %}
+        {% set t = t | regex_replace('^(the|a) ', '') | regex_replace(' (please|thanks|thank you)$', '') %}
+        {{ t if t else favourite }}
+      key: >-
+        {% set ns = namespace(key='') %}
+        {% set no_bbc = heard | regex_replace('^bbc ', '') %}
+        {% for c in [heard, no_bbc, heard | regex_replace(' (radio station|radio|station)$', ''), no_bbc | regex_replace(' (radio station|radio|station)$', '')] %}
+          {% if not ns.key and c in stations %}{% set ns.key = c %}{% endif %}
+        {% endfor %}
+        {{ ns.key }}
+      pick: "{{ stations[key] if key else none }}"
+      # A pinned station with a web address plays straight from it, without looking it up.
+      direct: "{{ pick is not none and (pick[0] | string).startswith('http') }}"
+      # Not pinned: search on the name itself, as plenty of stations don't have "radio" in their name.
+      looking_for: >-
+        {% set core = heard | regex_replace('^radio (station )?', '') | regex_replace(' (radio station|radio|station)$', '') | trim %}
+        {{ pick[1] if pick else (core or heard) }}
+      # A pinned station plays straight from its own Radio Browser entry (or web address), with no search: a search
+      # by name only finds it if it comes back among the first results with its name exactly as written, which
+      # failed for Capital and others.
+      exact: >-
+        {% if pick is none %}{% elif direct %}{{ pick[0] }}{% else %}radiobrowser://radio/{{ pick[0] }}{% endif %}
+      before: "{{ state_attr(player, 'media_content_id') or '' }}"
+  - if: "{{ exact != '' }}"
+    then:
+      - action: music_assistant.play_media
+        continue_on_error: true
+        target:
+          entity_id: "{{ player }}"
+        data:
+          media_id: "{{ exact }}"
+          media_type: radio
+          enqueue: replace
+      # Playing, and it's the new station (not still the old one).
+      - wait_template: >-
+          {% set now = state_attr(player, 'media_content_id') or '' %}
+          {{ is_state(player, 'playing') and ((pick[0] | string) in now or now != before) }}
+        timeout: "00:00:12"
+        continue_on_timeout: true
+  - variables:
+      played: >-
+        {% set now = state_attr(player, 'media_content_id') or '' %}
+        {{ exact != '' and is_state(player, 'playing') and ((pick[0] | string) in now or now != before) }}
+  # Otherwise (not pinned, or that didn't start): ask Music Assistant's Radio Browser for it by name, then play the
+  # exact station if it's one of the pinned ones.
+  - if: "{{ not played and not direct }}"
+    then:
+      - action: music_assistant.search
+        continue_on_error: true
+        data:
+          config_entry_id: "{{ config_entry_id(player) }}"
+          name: "{{ looking_for }}"
+          media_type: radio
+          limit: 25
+        response_variable: found
+  - variables:
+      radios: >-
+        {% set r = found if found is defined and found is mapping else {} %}
+        {{ r.get('radio', r.get('radios', [])) or [] }}
+      # The pinned station itself, or one with exactly that name, or else the shortest name with every word that
+      # was asked for in it ("BBC Radio Norfolk" for "bbc norfolk"). Nothing else: better to say so than play the
+      # wrong station.
+      choice: &choose >-
+        {% if direct %}{{ {'uri': pick[0], 'name': pick[1]} }}{% else %}
+        {% set ns = namespace(item=none, size=999) %}
+        {% if pick %}{% for r in radios %}{% if ns.item is none and pick[0] in (r.uri | string) %}{% set ns.item = r %}{% endif %}{% endfor %}{% endif %}
+        {% for r in radios %}{% if ns.item is none and (r.name | string | lower | trim) == (looking_for | lower | trim) %}{% set ns.item = r %}{% endif %}{% endfor %}
+        {% if ns.item is none %}
+          {% set want = (looking_for | lower | regex_replace('[^a-z0-9 ]', ' ')).split() | reject('in', ['radio', 'fm', 'the', 'station', 'uk', 'a', 'and']) | list %}
+          {% set best = namespace(item=none, size=999) %}
+          {% for r in radios %}
+            {% set have = ' ' ~ (r.name | string | lower | regex_replace('[^a-z0-9 ]', ' ')) ~ ' ' %}
+            {% set every = namespace(ok=true) %}
+            {% for w in want %}{% if (' ' ~ w ~ ' ') not in have %}{% set every.ok = false %}{% endif %}{% endfor %}
+            {% if want and every.ok and (r.name | string | trim | length) < best.size %}{% set best.item = r %}{% set best.size = r.name | string | trim | length %}{% endif %}
+          {% endfor %}
+          {% set ns.item = best.item %}
+        {% endif %}
+        {{ ns.item }}{% endif %}
+  # Nothing had every word: once more without the last one ("Heart Radio East" -> "Heart Radio"), as long
+  # as two meaningful words are left, so a station is never picked on one ordinary word like "BBC".
+  - variables:
+      shorter: >-
+        {% set fewer = (looking_for | lower | regex_replace('[^a-z0-9 ]', ' ')).split()[:-1] %}
+        {% set meaningful = fewer | reject('in', ['radio', 'fm', 'the', 'station', 'uk', 'a', 'and']) | list %}
+        {{ fewer | join(' ') if not played and not direct and not pick and choice is not mapping and meaningful | length >= 2 else '' }}
+  - if: "{{ shorter != '' }}"
+    then:
+      - action: music_assistant.search
+        continue_on_error: true
+        data:
+          config_entry_id: "{{ config_entry_id(player) }}"
+          name: "{{ shorter }}"
+          media_type: radio
+          limit: 25
+        response_variable: found
+      - variables:
+          looking_for: "{{ shorter }}"
+          radios: >-
+            {% set r = found if found is defined and found is mapping else {} %}
+            {{ r.get('radio', r.get('radios', [])) or [] }}
+      - variables:
+          choice: *choose
+  - if: "{{ not played and choice is mapping and choice.uri is defined }}"
+    then:
+      - action: music_assistant.play_media
+        continue_on_error: true
+        target:
+          entity_id: "{{ player }}"
+        data:
+          media_id: "{{ choice.uri }}"
+          media_type: radio
+          enqueue: replace
+      - wait_template: "{{ is_state(player, 'playing') }}"
+        timeout: "00:00:10"
+        continue_on_timeout: true
+  - variables:
+      result:
+        found: "{{ played or (choice is mapping and choice.uri is defined and is_state(player, 'playing')) }}"
+        name: "{{ pick[2] if pick else (choice.name | trim if choice is mapping and choice.name is defined else (station | default('') | string | trim | regex_replace('[.!?]+$', ''))) }}"
+  - stop: Done
+    response_variable: result

@@ -1,0 +1,28 @@
+alias: Weather forecast
+description: >-
+  Gets the weather forecast for home: the next 24 hours hour by hour, and the
+  coming days. Use this for any question about future weather, such as later
+  today, tonight, tomorrow, the weekend or a named day. Times are in UTC, so
+  convert them to local time using the "now" value. Answer in one or two short
+  spoken sentences with rounded temperatures.
+mode: parallel
+sequence:
+  - action: weather.get_forecasts
+    target:
+      entity_id: weather.forecast_home
+    data:
+      type: hourly
+    response_variable: hourly
+  - action: weather.get_forecasts
+    target:
+      entity_id: weather.forecast_home
+    data:
+      type: daily
+    response_variable: daily
+  - variables:
+      result:
+        now: "{{ now().isoformat() }}"
+        next_24_hours: "{{ hourly['weather.forecast_home'].forecast[:24] }}"
+        coming_days: "{{ daily['weather.forecast_home'].forecast }}"
+  - stop: Forecast ready
+    response_variable: result

@@ -1,0 +1,49 @@
+alias: Play music shortcut
+description: >-
+  Plays "song by artist" requests straight away, without asking Grok, so they're quicker and stay at
+  home. Requests with no "by", like "play an 80s song", still go to Grok.
+mode: restart
+triggers:
+  - trigger: conversation
+    command:
+      # "plate", "plays" and "played" are ways speech recognition has misheard, or could mishear, "play".
+      - "[please] (play|plate|plays|played) {title} by {artist}"
+      - "[please] put on {title} by {artist}"
+      - "(can|could) you (play|plate) {title} by {artist}"
+variables:
+  # Split at the last "by", so "Stand by Me by Ben E King" keeps its full title.
+  full: "{{ trigger.slots.title }} by {{ trigger.slots.artist }}"
+  song_raw: "{{ full.rsplit(' by ', 1)[0] | trim }}"
+  singer: "{{ full.rsplit(' by ', 1)[1] | regex_replace('[.,!?]+$', '') | trim }}"
+  is_album: "{{ song_raw | lower is match('(the )?album ') }}"
+  song: "{{ song_raw | regex_replace('(?i)^(the )?album ', '') }}"
+  anything_by: "{{ song_raw | lower in ['something', 'some music', 'music', 'a song', 'some songs', 'songs', 'anything'] }}"
+actions:
+  - if: "{{ anything_by }}"
+    then:
+      - action: music_assistant.play_media
+        continue_on_error: true
+        target:
+          entity_id: media_player.echo_show_example
+        data:
+          media_id: "{{ singer }}"
+          media_type: artist
+          enqueue: replace
+    else:
+      - action: music_assistant.play_media
+        continue_on_error: true
+        target:
+          entity_id: media_player.echo_show_example
+        data:
+          media_id: "{{ song }}"
+          artist: "{{ singer }}"
+          media_type: "{{ 'album' if is_album else 'track' }}"
+          enqueue: replace
+  # Only say it's playing once the Echo really has started.
+  - wait_template: "{{ is_state('media_player.echo_show_example', 'playing') }}"
+    timeout: "00:00:10"
+    continue_on_timeout: true
+  - set_conversation_response: >-
+      {% if not wait.completed %}Sorry, I couldn't find that one.
+      {% elif anything_by %}There you go, some {{ singer }}.
+      {% else %}There you go, {{ song }} by {{ singer }}.{% endif %}
