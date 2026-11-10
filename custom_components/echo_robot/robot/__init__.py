@@ -32,6 +32,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from .book import Book, MAX_REMINDERS, _words
+from .bops import BopShelf
 from .wake import Sunrise
 from .words import NoTime, clock_words, parse_alarm, parse_reminder, speak_when, you_form
 
@@ -53,7 +54,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hub = Hub(hass, settings.get('announce', []), settings.get('wake_lights', []), settings.get('wake_minutes', 15))
     await hub.start()
     hass.data[DOMAIN] = hub
-    for command in (ws_subscribe, ws_timer_cancel, ws_reminder_done, ws_reminder_snooze):
+    for command in (ws_subscribe, ws_timer_cancel, ws_reminder_done, ws_reminder_snooze, ws_bops, ws_bop_save, ws_bop_delete, ws_bop_use):
         websocket_api.async_register_command(hass, command)
     for handler in (AddReminder(), ListReminders(), CancelReminder(), SetAlarm(), ListAlarms(), StopAlarm(), SnoozeAlarm()):
         intent.async_register(hass, handler)
@@ -77,11 +78,23 @@ class Hub:
         self._poll_stop = None
         self._timer_key = None
         self._warned = False
+        # Bops: the robot screens' face characters (bops.py), kept apart from the reminders
+        self.bop_store = Store(hass, 1, f'{DOMAIN}.bops')
+        self.bop_listeners: set = set()
+        self.bops = BopShelf(self._bops_changed)
 
     async def start(self):
         saved = await self.store.async_load() or {}
         self.book.load(saved.get('items'))
         self._plan_alarms()
+        self.bops.load(await self.bop_store.async_load())
+
+    @callback
+    def _bops_changed(self):
+        self.bop_store.async_delay_save(self.bops.dump, 1)
+        data = self.bops.snapshot()
+        for send in list(self.bop_listeners):
+            send(data)
 
     # ---- sharing with the screens ----
     def snapshot(self) -> dict:
@@ -549,6 +562,45 @@ def ws_reminder_snooze(hass, connection, msg):
         connection.send_result(msg['id'])
     else:
         connection.send_error(msg['id'], 'not_found', 'That reminder has gone')
+
+
+# ---- Bops: the face characters every screen can pick from (bops.py) ----
+@websocket_api.websocket_command({vol.Required('type'): 'echo_robot/bops'})
+@callback
+def ws_bops(hass, connection, msg):
+    hub = _hub(hass)
+
+    def send(data):
+        connection.send_message(websocket_api.event_message(msg['id'], data))
+    hub.bop_listeners.add(send)
+    connection.subscriptions[msg['id']] = lambda: hub.bop_listeners.discard(send)
+    connection.send_result(msg['id'])
+    send(hub.bops.snapshot())
+
+
+@websocket_api.websocket_command({vol.Required('type'): 'echo_robot/bop_save', vol.Required('bop'): dict})
+@callback
+def ws_bop_save(hass, connection, msg):
+    try:
+        connection.send_result(msg['id'], _hub(hass).bops.save(msg['bop']))
+    except ValueError as err:
+        connection.send_error(msg['id'], 'invalid_format', str(err))
+
+
+@websocket_api.websocket_command({vol.Required('type'): 'echo_robot/bop_delete', vol.Required('bop_id'): str})
+@callback
+def ws_bop_delete(hass, connection, msg):
+    _hub(hass).bops.delete(msg['bop_id'])
+    connection.send_result(msg['id'])
+
+
+@websocket_api.websocket_command({vol.Required('type'): 'echo_robot/bop_use', vol.Required('device_id'): str, vol.Required('bop'): dict})
+@callback
+def ws_bop_use(hass, connection, msg):
+    try:
+        connection.send_result(msg['id'], _hub(hass).bops.use(msg['device_id'], msg['bop']))
+    except ValueError as err:
+        connection.send_error(msg['id'], 'invalid_format', str(err))
 
 
 class EchoRobotView(HomeAssistantView):

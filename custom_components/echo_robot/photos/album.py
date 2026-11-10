@@ -102,6 +102,8 @@ class Album:
         wanted = self.album.casefold()
         for params in ({}, {'shared': 'true'}):
             status, _, body = await self.fetch('GET', '/api/albums', params, None)
+            if params and status == 400:
+                continue   # newer Immich lists shared albums without being asked, and refuses `shared`
             _check(status)
             for album in _json(body) or []:
                 if isinstance(album, dict) and str(album.get('albumName', '')).strip().casefold() == wanted:
@@ -132,16 +134,19 @@ class Album:
         return ids
 
     async def _search(self) -> list:
-        found, page = [], 1
-        while page and len(found) < MAX_PHOTOS:
-            request = {'albumIds': [self.album_id], 'type': 'IMAGE', 'size': PAGE, 'page': page, 'withDeleted': False}
+        # Immich 3.2+ pages with `nextCursor`; older ones with a page number in `nextPage`.
+        found, where, pages = [], {'page': 1}, 0
+        while where and len(found) < MAX_PHOTOS and pages < MAX_PHOTOS // 10:
+            request = {'albumIds': [self.album_id], 'type': 'IMAGE', 'size': PAGE, 'withDeleted': False, **where}
             status, _, body = await self.fetch('POST', '/api/search/metadata', {}, request)
             if status in (401, 403):
                 raise Problem('key_needs_asset_read')
             _check(status)
             assets = (_json(body).get('assets') or {})
             found.extend(assets.get('items') or [])
-            page = int(assets['nextPage']) if str(assets.get('nextPage') or '').isdigit() else None
+            pages += 1
+            cursor, page = str(assets.get('nextCursor') or ''), str(assets.get('nextPage') or '')
+            where = {'cursor': cursor} if cursor else {'page': int(page)} if page.isdigit() else None
         return found
 
     async def photo(self, asset_id: str) -> tuple[str, bytes]:

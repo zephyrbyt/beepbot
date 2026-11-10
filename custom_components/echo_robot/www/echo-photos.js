@@ -1,4 +1,4 @@
-/* Echo Robot photos: once the robot has sat idle for a while, a few photos from one Immich album, then the face again.
+/* Echo Robot photos: once the robot has sat idle for a while, a photo from one Immich album, then the face again.
    Talking, the doorbell, music, home events, alerts, the menu or a tap all bring the robot back at once.
 
    The photos come through Home Assistant's echo_photos add-on, so this page never holds the Immich key and never
@@ -12,10 +12,12 @@
      photos: false        turns the photos off
      photos_after: 300    seconds of the plain idle face before photos show
      photos_every: 600    seconds between one show and the next, while it stays idle
-     photos_for: 60       how long a show lasts, in seconds
-     photo_seconds: 10    how long each photo stays */
+     photos_for: 60       how long a photo shows, in seconds
+     photo_seconds: 60    set lower than photos_for to show several photos in turn each time (10 shows six in a minute)
+     photos_log: true     notes in Home Assistant's log why photos are or aren't showing, for when they don't appear
+                          (a line at most once a minute, only when the reason changes; nothing from the photos themselves) */
 (() => {
-  const PHOTO_DEFAULTS = { photos: true, photos_after: 300, photos_every: 600, photos_for: 60, photo_seconds: 10 };
+  const PHOTO_DEFAULTS = { photos: true, photos_after: 300, photos_every: 600, photos_for: 60, photo_seconds: 60 };
   const FADE_MS = 1200;            // photo to photo, and the gentle way back to the face
   const QUICK_MS = 200;            // when something needs the robot: back at once
   const TICK_MS = 1000;
@@ -23,10 +25,11 @@
   const LIST_RETRY_MS = 2 * 60000;  // after Home Assistant or Immich didn't answer
   const LOAD_MS = 15000;           // give up on a photo that hasn't arrived by then
   const MAX_FAILS = 3;             // photos in a row that won't load before giving up on this show
-  const COVER_FROM = 1.6;          // photos at least this wide for their height fill the screen; others fit inside it
   // Anything open, on screen beside the face or asleep: no photos. (has-card is an info card: a moment like the others.)
   const BUSY = /(^|-)open$|^has-(?!card$)|^talking$|^night$/;
   const API = 'echo_photos';
+  const NOTE_EVERY_MS = 60000;     // at most one line a minute in Home Assistant's log
+  const NOTE_MAX = 60;             // and no more than this many per page load
 
   const CSS = `
 .photos{position:absolute;inset:0;z-index:15;background:#000;opacity:0;pointer-events:none;transition:opacity ${FADE_MS}ms ease-in-out}
@@ -34,10 +37,7 @@
 .photos.quick{transition-duration:${QUICK_MS}ms}
 .ph-slide{position:absolute;inset:0;opacity:0;transition:opacity ${FADE_MS}ms ease-in-out;overflow:hidden}
 .ph-slide.front{opacity:1}
-.ph-bg{position:absolute;inset:0;width:100%;height:100%;opacity:.55}
-.ph-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;transform-origin:50% 45%}
-.ph-slide.cover .ph-img{object-fit:cover;object-position:50% 40%}
-.ph-slide.cover .ph-bg{display:none}`;
+.ph-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 35%;transform-origin:50% 40%}`;
 
   const wait = (ms) => new Promise((done) => setTimeout(done, ms));
   const inTime = (promise, ms) => Promise.race([promise, wait(ms).then(() => { throw new Error('timeout'); })]);
@@ -55,10 +55,52 @@
       this.show = null;       // { until, nextAt, slides, front, fails }
       this.starting = false;
       this.el = null;
+      this.listNote = 'not asked yet';
+      this.loadNote = '';
+      this.noted = { reason: '', at: 0, count: 0 };
       this.timer = setInterval(() => this.tick(), TICK_MS);
     }
-    get cfg() { return { ...PHOTO_DEFAULTS, ...(this.card._config || {}) }; }
+    // Why photos are or aren't showing, in a few words: what the log line says.
+    why() {
+      const c = this.card;
+      if (this.cfg.photos === false) return 'turned off (photos: false)';
+      if (this.show) return 'showing photos';
+      if (!c._built) return 'robot not drawn yet';
+      if (!c._hass) return 'no Home Assistant connection yet';
+      if (c._hass.connected === false) return 'Home Assistant connection lost';
+      if (c._demo) return 'demo running';
+      if (c._doorbell) return 'doorbell on screen';
+      const shell = c._el && c._el.shell;
+      const busy = shell ? [...shell.classList].filter((name) => BUSY.test(name)) : [];
+      if (busy.length) return `busy: ${busy.join(' ')}`;
+      if (typeof c._ringAlert === 'function' && c._ringAlert()) return 'alarm or timer ringing';
+      const shown = c._alerts ? [...c._alerts.values()].filter((a) => a && a.mode && a.mode !== 'hidden') : [];
+      if (shown.length) return `notice on screen: ${shown.map((a) => `${a.kind || 'alert'} (${a.mode})`).join(', ')}`;
+      const mood = c._mood();
+      if (mood !== 'idle') return `face is ${mood}, not idle`;
+      if (!this.ids.length) return `idle, but no photos: ${this.listNote}`;
+      if (this.loadNote) return `idle, photos would not load: ${this.loadNote}`;
+      return `idle, ${this.ids.length} photos, waiting`;
+    }
+    // A line in Home Assistant's log when the reason changes, so "why no photos?" can be answered from the server.
+    note() {
+      if (this.cfg.photos_log !== true || this.noted.count >= NOTE_MAX) return;
+      const hass = this.card._hass, now = Date.now(), reason = this.why();
+      if (!hass || hass.connected === false || reason === this.noted.reason || now - this.noted.at < NOTE_EVERY_MS) return;
+      const quietFor = this.quietSince ? ` (idle for ${Math.round((now - this.quietSince) / 1000)}s)` : '';
+      this.noted = { reason, at: now, count: this.noted.count + 1 };
+      try {
+        Promise.resolve(hass.callService('system_log', 'write', { message: `Echo photos: ${reason}${quietFor}`, level: 'warning', logger: 'echo_photos.screen' }))
+          .catch(() => {});
+      } catch (error) { /* only a note */ }
+    }
+    get cfg() {
+      // A setting left blank (null) keeps its default rather than becoming 0.
+      const set = Object.entries(this.card._config || {}).filter(([, value]) => value !== null && value !== undefined);
+      return { ...PHOTO_DEFAULTS, ...Object.fromEntries(set) };
+    }
     stop() {
+      this.stopped = true;
       clearInterval(this.timer);
       if (this.observer) this.observer.disconnect();
       this.observer = null;
@@ -87,6 +129,7 @@
     }
     tick() {
       this.watch();
+      this.note();
       const cfg = this.cfg, now = Date.now();
       if (cfg.photos === false) { this.hide(true); return; }
       const quiet = this.quiet();
@@ -119,12 +162,15 @@
       this.listing = Promise.resolve().then(() => hass.callApi('GET', API)).then((answer) => {
         const ids = Array.isArray(answer && answer.photos) ? answer.photos.filter((id) => typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id)) : [];
         // Immich away for a while: the add-on still sends the list it had. Nothing at all: keep what this page had.
+        this.listNote = ids.length ? `${ids.length} photos` : answer && answer.problem ? `the add-on says ${answer.problem}` : 'the album is empty';
         if (ids.length || (answer && answer.ok)) {
           this.ids = ids;
           const known = new Set(ids);
           this.queue = this.queue.filter((id) => known.has(id));
         }
-      }).catch(() => { /* Home Assistant away: asked again later (sooner while there are no photos yet) */ })
+      }).catch((error) => { // Home Assistant away: asked again later (sooner while there are no photos yet)
+        this.listNote = `could not ask Home Assistant (${(error && (error.status_code || error.code || error.message || error.error)) || 'no answer'})`;
+      })
         .then(() => { this.listing = null; });
     }
     nextId() {
@@ -162,11 +208,13 @@
         if (blobUrl) URL.revokeObjectURL(blobUrl);
         throw error;
       }
-      return { id, img, blobUrl, wide: img.naturalWidth / img.naturalHeight >= COVER_FROM };
+      return { id, img, blobUrl };
     }
     async loadSome() {
       for (let tries = 0; tries < Math.min(MAX_FAILS, Math.max(1, this.ids.length)); tries += 1) {
-        try { return await this.load(); } catch (error) { /* the next one, then */ }
+        try { const photo = await this.load(); this.loadNote = ''; return photo; } catch (error) {
+          this.loadNote = String((error && error.message) || error || 'unknown').slice(0, 80); // the next one, then
+        }
       }
       return null;
     }
@@ -190,15 +238,9 @@
     }
     slide(photo) {
       const slide = document.createElement('div');
-      slide.className = 'ph-slide' + (photo.wide ? ' cover' : '');
-      // Behind a photo that doesn't fill the screen: the same photo, tiny and stretched, so it's soft and blurred.
-      // Drawn once, so the Echo's slow chip has nothing to work out while it shows.
-      const bg = document.createElement('canvas');
-      bg.className = 'ph-bg';
-      bg.width = 24;
-      bg.height = 12;
-      try { bg.getContext('2d').drawImage(photo.img, 0, 0, 24, 12); } catch (error) { /* plain black then */ }
-      slide.append(bg, photo.img);
+      // Every photo fills the screen; a tall one shows its upper middle, where faces usually are.
+      slide.className = 'ph-slide';
+      slide.append(photo.img);
       slide._photo = photo;
       return slide;
     }
@@ -213,7 +255,8 @@
       const photo = await this.loadSome();
       this.starting = false;
       if (!photo) { this.lastShow = Date.now(); return; } // none would load: try again next time round
-      if (!this.quiet() || this.show || this.cfg.photos === false) { this.drop(photo); return; }
+      // (Taken off the page while the photo loaded: let it go, or it would stay on screen with nothing to end it.)
+      if (this.stopped || !this.quiet() || this.show || this.cfg.photos === false) { this.drop(photo); return; }
       if (this.card._moment) this.card._endMoment(true);
       const el = this.build(), cfg = this.cfg, now = Date.now();
       const slide = this.slide(photo);

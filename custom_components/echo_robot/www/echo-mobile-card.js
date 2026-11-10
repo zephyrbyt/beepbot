@@ -75,9 +75,62 @@ const ICON = {
 const WEATHER_ICON = { 'clear-night': 'moon', cloudy: 'cloud', fog: 'fog', hail: 'snow', lightning: 'storm', 'lightning-rainy': 'storm',
   partlycloudy: 'partly', pouring: 'rain', rainy: 'rain', snowy: 'snow', 'snowy-rainy': 'snow', sunny: 'sun', windy: 'wind', 'windy-variant': 'wind', exceptional: 'cloud' };
 
+// ---- Bops: the face characters (made and changed on the Echo's Settings; the same list and drawings as echo-home-card.js).
+// Robot Home shows the one picked on its Customise sheet. Its eyes and mouth take the place of the plain round eyes and the
+// plain smile; special ones (hearts, stars, a grin, talking) stay as they are.
+const BOP_EYE_PATHS = {
+  round: '<rect class="fill" x="8" y="4" width="84" height="112" rx="40"/>',
+  tall: '<rect class="fill" x="25" y="-6" width="50" height="132" rx="25"/>',
+  dots: '<circle class="fill" cx="50" cy="64" r="25"/>',
+  happy: '<path class="line" d="M12 82Q50-6 88 82"/>',
+  sleepy: '<path class="fill" d="M6 56H94A44 44 0 0 1 6 56Z"/>',
+  closed: '<path class="line" d="M12 50Q50 96 88 50"/>',
+  star: '<path class="fill" d="M50 4 63 42 100 44 71 68 82 108 50 85 18 108 29 68 0 44 37 42Z"/>',
+};
+const BOP_MOUTH_PATHS = { smile: '<path class="stroke" d="M30 16Q90 90 150 16"/>', grin: '<path class="solid" d="M24 8H156Q150 78 90 78 30 78 24 8Z"/>', small: '<path class="stroke" d="M64 28Q90 52 116 28"/>', o: '<ellipse class="solid" cx="90" cy="40" rx="26" ry="36"/>', flat: '<path class="stroke" d="M52 40H128"/>', cat: '<path class="stroke" d="M38 24Q50 66 90 36Q130 66 142 24"/>' };
+const BOP_EXTRAS = ['brows', 'blush', 'freckles', 'glasses'];
+const BOP_MOODS = ['cheerful', 'bubbly', 'grumpy', 'posh', 'sleepy', 'cheeky'];
+const BOP_PRESETS = [
+  { id: 'beep', name: 'Beep', bg: '#3b3fb8', eye: 'round', mouth: 'smile', extras: [], mood: 'cheerful', voice: 'bm_fable' },
+  { id: 'bop', name: 'Bop', bg: '#c2407a', eye: 'happy', mouth: 'grin', extras: ['blush'], mood: 'bubbly', voice: 'af_sky' },
+  { id: 'grumbles', name: 'Grumbles', bg: '#7a1f2b', eye: 'sleepy', mouth: 'flat', extras: ['brows'], mood: 'grumpy', voice: 'am_onyx' },
+  { id: 'sirbleep', name: 'Sir Bleep', bg: '#1b2f5e', eye: 'dots', mouth: 'small', extras: ['glasses', 'brows'], mood: 'posh', voice: 'bm_lewis' },
+  { id: 'dozy', name: 'Dozy', bg: '#3a2a7a', eye: 'closed', mouth: 'o', extras: [], mood: 'sleepy', voice: 'af_sarah' },
+  { id: 'sparky', name: 'Sparky', bg: '#c45a12', eye: 'star', mouth: 'cat', extras: ['freckles'], mood: 'cheeky', voice: 'am_echo' },
+];
+const BOP_BROW_Y = { round: -44, tall: -62, dots: 28, happy: 20, sleepy: 54, closed: 52, star: -40, heart: -14, half: 56, x: 10 };
+const BOP_BROW = { cheerful: [[-5, -8], [5, -8]], bubbly: [[-7, -14], [7, -14]], grumpy: [[16, 10], [-16, 10]], posh: [[-5, -10], [5, 2]], sleepy: [[-9, 8], [9, 8]], cheeky: [[8, 6], [-12, -20]] };
+const bopAwake = (eye) => (eye === 'closed' ? 'sleepy' : eye);
+function cleanBop(b) {
+  if (!b || typeof b !== 'object' || typeof b.id !== 'string' || !/^[a-z0-9_-]{1,40}$/.test(b.id)) return null;
+  const name = String(b.name || '').replace(/\s+/g, ' ').trim().slice(0, 16);
+  if (!name) return null;
+  return { id: b.id, name, bg: /^#[0-9a-f]{6}$/i.test(b.bg || '') ? b.bg.toLowerCase() : '#3b3fb8', eye: BOP_EYE_PATHS[b.eye] ? b.eye : 'round', mouth: BOP_MOUTH_PATHS[b.mouth] ? b.mouth : 'smile',
+    extras: BOP_EXTRAS.filter((x) => Array.isArray(b.extras) && b.extras.includes(x)), mood: BOP_MOODS.includes(b.mood) ? b.mood : 'cheerful', voice: typeof b.voice === 'string' ? b.voice : 'bm_fable' };
+}
+// Glasses and eyebrows go with the eyes, blush and freckles on the cheeks (face units, 600×350).
+function bopKit(b, still) {
+  const has = (x) => b.extras.includes(x);
+  let eyes = '', cheeks = '';
+  if (has('glasses')) eyes += '<g class="bop-glass"><circle cx="130" cy="122" r="116"/><circle cx="470" cy="122" r="116"/><path class="bop-glass-line" d="M246 110Q300 82 354 110M14 100-34 82M586 100 634 82"/></g>';
+  if (has('brows')) {
+    const y = has('glasses') ? -22 : (BOP_BROW_Y[b.eye] ?? -44), hold = BOP_BROW[b.mood] || BOP_BROW.cheerful;
+    const brow = (side, x, [turn, up]) => `<rect class="brow ${side}" x="${x}" y="0" width="124" height="24" rx="12"${still ? ` style="transform:translateY(${up}px) rotate(${turn}deg)"` : ''}/>`;
+    eyes += `<g class="brows"${still ? ` style="transform:translateY(${y}px)"` : ''}>${brow('l', 68, hold[0])}${brow('r', 408, hold[1])}</g>`;
+  }
+  if (has('blush')) cheeks += '<g class="bop-blush"><ellipse cx="92" cy="278" rx="56" ry="25"/><ellipse cx="508" cy="278" rx="56" ry="25"/></g>';
+  if (has('freckles')) cheeks += `<g class="bop-freckles">${[[66, 262], [92, 284], [118, 264], [534, 262], [508, 284], [482, 264]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="7.5"/>`).join('')}</g>`;
+  return { eyes, cheeks };
+}
+function bopFace(b, scale) {
+  const kit = bopKit(b, true), eye = BOP_EYE_PATHS[b.eye];
+  return `<span class="bf" style="width:${Math.round(600 * scale)}px;height:${Math.round(350 * scale)}px"><span class="bf-in" style="transform:scale(${scale})"><svg class="bf-eye l" viewBox="0 0 100 120">${eye}</svg><svg class="bf-eye r" viewBox="0 0 100 120">${eye}</svg><svg class="bf-kit" viewBox="0 0 600 350">${kit.eyes}${kit.cheeks}</svg><svg class="bf-mouth" viewBox="0 0 180 80">${BOP_MOUTH_PATHS[b.mouth]}</svg></span></span>`;
+}
+
 // The robot's face, drawn the same way as on the Echo: the same eye and mouth shapes, the same colours for each mood.
 const EYE_SVG = `<svg viewBox="0 0 100 120">
   <g class="round"><rect class="fill" x="8" y="4" width="84" height="112" rx="40"/></g>
+  <g class="tall">${BOP_EYE_PATHS.tall}</g><g class="dots">${BOP_EYE_PATHS.dots}</g><g class="sleepy">${BOP_EYE_PATHS.sleepy}</g>
   <g class="happy"><path class="line" d="M12 82Q50-6 88 82"/></g>
   <g class="closed"><path class="line" d="M12 50Q50 96 88 50"/></g>
   <g class="heart"><path class="fill" d="M50 112C6 76 0 46 12 26 26 6 46 14 50 36 54 14 74 6 88 26 100 46 94 76 50 112Z"/></g>
@@ -86,7 +139,8 @@ const EYE_SVG = `<svg viewBox="0 0 100 120">
   <g class="half"><rect class="fill" x="8" y="50" width="84" height="62" rx="28"/></g>
 </svg>`;
 const FACE_HTML = `<div class="face"><div class="face-move">
-  <div class="eyes"><div class="eye l">${EYE_SVG}</div><div class="eye r">${EYE_SVG}</div></div>
+  <div class="eyes"><div class="eye l">${EYE_SVG}</div><div class="eye r">${EYE_SVG}</div><svg class="bop-eyes" viewBox="0 0 600 350" aria-hidden="true"></svg></div>
+  <svg class="bop-cheeks" viewBox="0 0 600 350" aria-hidden="true"></svg>
   <div class="mouth">
     <svg class="smile" viewBox="0 0 180 80"><path class="stroke" d="M30 16Q90 90 150 16"/></svg>
     <svg class="small" viewBox="0 0 180 80"><path class="stroke" d="M64 28Q90 52 116 28"/></svg>
@@ -94,6 +148,7 @@ const FACE_HTML = `<div class="face"><div class="face-move">
     <svg class="o" viewBox="0 0 180 80"><ellipse class="solid" cx="90" cy="40" rx="26" ry="36"/></svg>
     <svg class="grin" viewBox="0 0 180 80"><path class="solid" d="M24 8H156Q150 78 90 78 30 78 24 8Z"/></svg>
     <svg class="wiggle" viewBox="0 0 180 80"><path class="stroke" d="M22 44Q44 8 66 44T110 44 158 40"/></svg>
+    <svg class="cat" viewBox="0 0 180 80">${BOP_MOUTH_PATHS.cat}</svg>
     <div class="bars"><i></i><i></i><i></i><i></i><i></i></div>
   </div>
   <div class="props"><i class="p p1"></i><i class="p p2"></i><i class="p p3"></i></div>
@@ -234,7 +289,7 @@ svg{display:block;width:100%;height:100%}
 .app[data-layout=tall]{grid-template-rows:auto minmax(0,1fr);gap:12px}
 
 /* ---------- the robot: the whole panel takes the colour of its mood, as the Echo's screen does ---------- */
-.robot{--bg:#3b3fb8;--eye:#fff;--ink:#fff;position:relative;overflow:hidden;border-radius:22px;background:var(--bg);color:var(--ink);transition:background-color .45s,color .45s}
+.robot{--bg:var(--bop-bg,#3b3fb8);--eye:#fff;--ink:#fff;position:relative;overflow:hidden;border-radius:22px;background:var(--bg);color:var(--ink);transition:background-color .45s,color .45s}
 .robot[data-mood=sleep],.robot[data-mood=sleepy]{--bg:#141a38;--eye:#8d9ab8;--ink:#b9c3dc}
 .robot[data-mood=listening]{--bg:#ffc933;--eye:#1a1400;--ink:#1a1400}
 .robot[data-mood=thinking]{--bg:#5b3fd6}
@@ -263,8 +318,42 @@ svg{display:block;width:100%;height:100%}
 [data-eye=round] .eye g.round,[data-eye=happy] .eye g.happy,[data-eye=closed] .eye g.closed,[data-eye=heart] .eye g.heart,
 [data-eye=star] .eye g.star,[data-eye=x] .eye g.x,[data-eye=half] .eye g.half,
 [data-eye=wink] .eye.l g.round,[data-eye=wink] .eye.r g.closed{display:block}
-[data-eye=round] .eye{animation:blink 6.3s infinite}
-[data-eye=round] .eye.r{animation-delay:.05s}
+[data-eye=round] .eye,[data-eye=tall] .eye,[data-eye=dots] .eye{animation:blink 6.3s infinite}
+[data-eye=round] .eye.r,[data-eye=tall] .eye.r,[data-eye=dots] .eye.r{animation-delay:.05s}
+/* Bops: the extra shapes, and the extras layer */
+[data-eye=tall] .eye g.tall,[data-eye=dots] .eye g.dots,[data-eye=sleepy] .eye g.sleepy,[data-mouth=cat] .mouth .cat{display:block}
+.robot[data-beye]:not([data-beye=round]) [data-eye=wink] .eye.l g.round{display:none}
+${['tall', 'dots', 'happy', 'sleepy', 'star'].map((s) => `.robot[data-beye=${s}] [data-eye=wink] .eye.l g.${s}{display:block}`).join('')}
+.bop-eyes,.bop-cheeks{position:absolute;left:0;top:0;width:600px;height:350px;overflow:visible;pointer-events:none;color:var(--eye)}
+[data-eye=none] .bop-eyes{opacity:0}
+.bop-glass{fill:currentColor;fill-opacity:.1;stroke:currentColor;stroke-width:13;stroke-linecap:round}
+.bop-glass .bop-glass-line{fill:none}
+.brows{transition:transform .25s;transform:translateY(-44px)}
+.brow{fill:currentColor;transform-box:fill-box;transform-origin:center;transform:translateY(calc(var(--y,0px) + var(--up,0px))) rotate(var(--r,0deg));transition:transform .35s}
+.bop-blush{fill:#ff8fbc;opacity:.62}
+.bop-freckles{fill:#ffd9b6}
+${Object.entries(BOP_BROW_Y).map(([e, y]) => `.face[data-eye=${e}] .bop-eyes .brows{transform:translateY(${y}px)}`).join('')}
+.face .bop-eyes.glasses .brows{transform:translateY(-22px)}
+${Object.entries(BOP_BROW).map(([m, [[lt, lu], [rt, ru]]]) => `.robot[data-bop=${m}] .brow.l{--r:${lt}deg;--y:${lu}px}.robot[data-bop=${m}] .brow.r{--r:${rt}deg;--y:${ru}px}`).join('')}
+.robot[data-mood=listening] .brow{--up:-14px}
+.robot[data-mood=thinking] .brow.r{--up:-22px;--r:-6deg}
+.robot[data-mood=door] .brow{--up:-30px}
+.bf{position:relative;display:block;flex-shrink:0;color:#fff;pointer-events:none}
+.bf-in{position:absolute;left:0;top:0;width:600px;height:350px;transform-origin:0 0}
+.bf-eye{position:absolute;top:0;width:200px;height:240px;overflow:visible}
+.bf-eye.l{left:30px}.bf-eye.r{left:370px}
+.bf-mouth{position:absolute;left:210px;top:262px;width:180px;height:80px;overflow:visible}
+.bf-kit{position:absolute;left:0;top:0;width:600px;height:350px;overflow:visible}
+.bf .fill,.bf .solid{fill:currentColor}
+.bf .line{fill:none;stroke:currentColor;stroke-width:21;stroke-linecap:round;stroke-linejoin:round}
+.bf .stroke{fill:none;stroke:currentColor;stroke-width:18;stroke-linecap:round;stroke-linejoin:round}
+.bop-pick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.bop-tile{position:relative;border-radius:14px;overflow:hidden;background:var(--tile);display:flex;flex-direction:column;text-align:left}
+.bop-tile .th{position:relative;height:64px;overflow:hidden}
+.bop-tile .th .bf{position:absolute;left:50%;top:12px;margin-left:-45px}
+.bop-tile .nm{padding:8px 10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bop-tile[aria-pressed=true]{outline:3px solid #fff;outline-offset:-3px}
+.bop-tile[aria-pressed=true] .nm{background:#fff;color:#1b1c2b}
 [data-mood=listening] .eye{animation:none;transform:scale(1.1)}
 [data-mood=thinking] .eye{animation:none;transform:scale(.82)}
 .mouth{position:absolute;left:210px;top:262px;width:180px;height:80px}
@@ -554,6 +643,9 @@ class EchoMobileCard extends HTMLElement {
     if (this._talk) this._talkFinish(this._talk);
     this._stopWatch();
     this._closeSheet();
+    const sub = this._bopSub;
+    this._bopSub = null;
+    if (sub) sub.then((unsub) => { if (typeof unsub === 'function') unsub(); }).catch(() => {});
   }
 
   // ---------- small helpers ----------
@@ -735,11 +827,15 @@ class EchoMobileCard extends HTMLElement {
     if (!this._built) return;
     const mood = this._currentMood(), m = MOODS[mood] || MOODS.idle;
     this._mood = mood;
+    // A Bop's own eyes and mouth take the place of the plain ones; shut eyes open a little unless it's just resting.
+    const b = this._bopNow;
+    const eye = b && m.eye === 'round' ? (mood === 'idle' ? b.eye : bopAwake(b.eye)) : m.eye;
+    const mouth = b && m.mouth === 'smile' ? b.mouth : m.mouth;
     for (const r of this._el.robots) {
       if (r.dataset.mood !== mood) r.dataset.mood = mood;
       const face = r.querySelector('.face');
-      face.dataset.eye = m.eye;
-      face.dataset.mouth = m.mouth;
+      face.dataset.eye = eye;
+      face.dataset.mouth = mouth;
       if (m.anim) face.dataset.anim = m.anim; else delete face.dataset.anim;
       const props = r.querySelector('.props');
       if (m.props) {
@@ -1242,6 +1338,8 @@ class EchoMobileCard extends HTMLElement {
     if (!this._built || !this._hass) return;
     if (!this._fitted) { this._fitted = true; this._fit(); }
     this._watchDoorbells();
+    this._watchBops();
+    this._applyBop();
     this._renderRobotText();
     this._renderTiles();
     this._renderMusic();
@@ -1763,8 +1861,64 @@ class EchoMobileCard extends HTMLElement {
     sh.view = view;
     box.replaceChildren(view);
   }
+  // ---------- Bops: which face character this screen shows (made on the Echo's Settings, kept by the echo_robot add-on) ----------
+  _watchBops() {
+    const conn = this._hass && this._hass.connection;
+    if (this._bopSub || this._bopsMissing || !conn || typeof conn.subscribeMessage !== 'function') return;
+    this._bopSub = conn.subscribeMessage((d) => {
+      if (!d || !Array.isArray(d.bops)) return;
+      this._bopShared = d.bops;
+      this._applyBop();
+      if (this._sheet && this._sheet.kind === 'cust' && this._sheet.bops) this._sheet.bops();
+    }, { type: 'echo_robot/bops' }).catch(() => { this._bopSub = null; this._bopsMissing = true; return null; });
+  }
+  _bopList() {
+    if (this._bopListFrom === this._bopShared && this._bopListMemo) return this._bopListMemo; // only worked out when it changes
+    const saved = (this._bopShared || []).map(cleanBop).filter(Boolean), byId = new Map(saved.map((b) => [b.id, b]));
+    this._bopListFrom = this._bopShared;
+    this._bopListMemo = [...BOP_PRESETS.map((p) => byId.get(p.id) || p), ...saved.filter((b) => !BOP_PRESETS.some((p) => p.id === b.id))];
+    return this._bopListMemo;
+  }
+  _bopChosen() {
+    if (this._bopId === undefined) this._bopId = this._choices().bop || null;
+    const list = this._bopList();
+    return list.find((b) => b.id === this._bopId) || list[0];
+  }
+  _applyBop() {
+    if (!this._built) return;
+    const b = this._bopChosen(), key = JSON.stringify(b);
+    if (key === this._bopKey) return;
+    this._bopKey = key;
+    this._bopNow = b;
+    const kit = bopKit(b);
+    for (const r of this._el.robots) {
+      r.style.setProperty('--bop-bg', b.bg);
+      r.dataset.bop = b.mood;
+      r.dataset.beye = bopAwake(b.eye);
+      const eyes = r.querySelector('.bop-eyes');
+      eyes.innerHTML = kit.eyes;
+      eyes.classList.toggle('glasses', b.extras.includes('glasses'));
+      r.querySelector('.bop-cheeks').innerHTML = kit.cheeks;
+    }
+    this._applyMood();
+  }
   _openCustomise() {
-    this._openSheet('cust', 'Customise', (box) => {
+    this._openSheet('cust', 'Customise', (box, sh) => {
+      box.insertAdjacentHTML('beforeend', '<p class="sec">Bop</p><div class="bop-pick" role="group" aria-label="Bop"></div><p class="sh-sub" style="text-align:left">Make and change Bops in the Echo’s Settings.</p>');
+      const pick = box.querySelector('.bop-pick');
+      sh.bops = () => {
+        const esc = (t) => String(t).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`), cur = this._bopChosen().id;
+        pick.innerHTML = this._bopList().map((b) => `<button class="bop-tile" data-id="${b.id}" aria-pressed="${b.id === cur}"><span class="th" style="background:${b.bg}">${bopFace(b, 0.15)}</span><span class="nm">${esc(b.name)}</span></button>`).join('');
+      };
+      pick.addEventListener('click', (e) => {
+        const t = e.target.closest('.bop-tile');
+        if (!t) return;
+        this._saveChoice('bop', t.dataset.id);
+        this._bopId = t.dataset.id;
+        this._applyBop();
+        sh.bops();
+      });
+      sh.bops();
       const shown = this._shown();
       const pickedScenes = this._choices().scenes;
       const scenesOn = new Set(Array.isArray(pickedScenes) ? pickedScenes : this._sceneList());
@@ -1826,6 +1980,8 @@ class EchoMobileCard extends HTMLElement {
       box.querySelector('.reset').addEventListener('click', () => {
         try { localStorage.removeItem(SETTINGS_KEY); } catch (err) { /* nothing saved */ }
         this._listKey = null;
+        this._bopId = null; // back to the first Bop (Beep), too
+        this._applyBop();
         this._closeSheet();
         this._renderTiles(true);
         this._renderRobotText();

@@ -215,8 +215,10 @@ class RadioSyncView(HomeAssistantView):
             return None
         raw = round((start[0] + STATION_LEAD + lag + echo_behind) * 1000)
         shift = self._shift_of(start[1])
+        # confirmed: listening has found this track's lyrics where the station's clock puts them before. If not, the
+        # card waits for this play's first listen to agree before showing them (they may be for another version).
         answer = {'ok': True, 'started': raw + shift, 'agree': STATION_WEIGHT, 'how': 'station', 'track': start[1],
-                  'shift': shift, 'echo_burst': echo_behind}
+                  'shift': shift, 'echo_burst': echo_behind, 'confirmed': self._confirmed(start[1])}
         # A radio edit this track is known to have: where it cuts, and the timing from there on.
         cuts = self._cuts_of(start[1])
         if cuts:
@@ -228,8 +230,16 @@ class RadioSyncView(HomeAssistantView):
         return str(track or '').split('-')[0]  # Heart writes the same track as "170331" and "170331-HSE"
 
     def _shift_of(self, track: str) -> int:
+        return self._learnt_shift(track) or 0
+
+    def _learnt_shift(self, track: str):
+        """What listening found for this track's start, in ms, or None if it never has (only your own timing saved)."""
         known = self._shifts.get(self._track_key(track))
-        return int(known[0]) if isinstance(known, list) and known and isinstance(known[0], (int, float)) else 0
+        value = known[0] if isinstance(known, list) and known else None
+        return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+    def _confirmed(self, track: str) -> bool:
+        return self._learnt_shift(track) is not None
 
     def _cuts_of(self, track: str) -> list:
         known = self._shifts.get(self._track_key(track))
@@ -265,11 +275,12 @@ class RadioSyncView(HomeAssistantView):
         """Your own timing for this track (on top of what listening found), kept for every time it plays."""
         key = self._track_key(track)
         if key:
-            self._put(key, self._shift_of(track), self._cuts_of(track), adjust_ms)
+            self._put(key, self._learnt_shift(track), self._cuts_of(track), adjust_ms)
 
-    def _put(self, key: str, shift_ms: int, cuts: list, adjust_ms) -> None:
-        # Saved as [shift, when, cuts, your timing]: the last two only when there are any.
-        entry = [int(shift_ms), round(time.time())]
+    def _put(self, key: str, shift_ms, cuts: list, adjust_ms) -> None:
+        # Saved as [shift, when, cuts, your timing]: the last two only when there are any. The shift is None for a
+        # track listening hasn't confirmed yet (only your timing saved).
+        entry = [None if shift_ms is None else int(shift_ms), round(time.time())]
         if cuts or adjust_ms is not None:
             entry.append(cuts or [])
         if adjust_ms is not None:
@@ -427,7 +438,8 @@ class RadioSyncView(HomeAssistantView):
                         # (measured on Heart), and a listen at the right place is closer, so the two are combined,
                         # once, and remembered for this track: next time it plays, it's right from the first line.
                         a, b = STATION_WEIGHT, heard.get('agree', 1)
-                        base.update(started=round((current['started'] * a + heard['started'] * b) / (a + b)), agree=a + b, how='both')
+                        base.update(started=round((current['started'] * a + heard['started'] * b) / (a + b)), agree=a + b, how='both',
+                                    confirmed=True)
                         if result['offset'] < LEARN_WITHIN_SECONDS:
                             self._learn_shift(station['track'], base['started'] - raw)
                     return self._keep(key, asked, {**base, 'checked': True, **measured})

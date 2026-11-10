@@ -13,6 +13,7 @@ A little robot face for a Home Assistant screen. It reacts when you talk to it, 
 - **Lyric reactions:** 64 reactions and about 730 trigger words. Sing about rain and it rains; sing about money and coins fall.
 - **Timers, reminders and alarms:** "remind me to take the bins out at 6", "wake me up at 7". Alarms can bring a light up slowly first.
 - **Home events:** it greets people when they get home, notices the heating coming on, gets sleepy at bedtime and stretches in the morning.
+- **Bops:** pick a character for each screen, or make your own: colour, eyes, mouth, extras (eyebrows, blush, freckles, glasses), a personality the chat assistant takes on, and a voice. Six come ready-made. Find them under **Bop** on the screen's Settings page.
 - **One-tap menu:** lights (hold for brightness), heating, scenes, robot vacuums and the doorbell camera.
 - **Robot Home:** a second card for an iPad or iPhone, with the robot and your home's controls.
 
@@ -88,6 +89,7 @@ The card's settings go in its section of your dashboard. [`examples/dashboard.ya
 | `lyrics_offset` | Moves the lyrics earlier or later, in seconds, if they don't line up with the music |
 | `moment_every` | Roughly how many seconds between idle moments (30 by default) |
 | `spotify` | Which Spotify player to follow, if it doesn't find the right one by itself |
+| `bop_voices` | `false` stops the screen switching its Echo to its Bop's voice. With it on, choosing a Bop with another voice makes a copy of the Echo's voice assistant with only the voice changed (named like "Home · Lewis") and switches the Echo to it. It needs an admin login on the screen and a voice service that has that voice (the Kokoro voice connector does) |
 
 You can also turn most features off, including `moments`, `lyrics`, `lyric_reactions`, `album_colours`, `now_playing` and `home_events`. Many can also be changed on the screen itself, from the cog in the tap menu.
 
@@ -103,7 +105,7 @@ echo_robot:
     url: http://127.0.0.1:2283
 ```
 
-The key needs Immich's `album.read` and `asset.view` permissions. It stays in Home Assistant and never reaches the screen. An Immich address outside your home network is refused. With a `configuration.yaml` section, the other integration settings go there too (see the top of `custom_components/echo_robot/__init__.py`).
+The key needs Immich's `album.read`, `asset.read` and `asset.view` permissions (newer Immich needs `asset.read` to list an album's photos). It stays in Home Assistant and never reaches the screen. An Immich address outside your home network is refused. With a `configuration.yaml` section, the other integration settings go there too (see the top of `custom_components/echo_robot/__init__.py`).
 
 ### Robot Home (iPad and iPhone)
 
@@ -125,7 +127,7 @@ An update replaces that file, so send your additions as a pull request here if y
 - **Lyrics:** while music plays, Home Assistant sends the song's title, artist, album and length to lyrics services. **Open** uses only [LRCLIB](https://lrclib.net). **All** (the default) adds Better Lyrics, Apple Music lyrics through Paxsenix, and NetEase. Those aren't official services and could stop working at any time. Change it under **Configure**, or turn lyrics off there.
 - **Radio lyrics** are lined up by listening to a few seconds of the station on your server and running them through your own speech recognition. Nothing heard is kept. To know how far behind live your speaker is, it reads your server's list of network connections.
 - **Photos** only come from an Immich on your own network, and only admins can see them through Home Assistant.
-- **Chat assistants:** if you use a cloud AI, what you say goes to that company as text.
+- **Chat assistants:** if you use a cloud AI, what you say goes to that company as text, with one line about the Bop on the screen you spoke to (its name and personality).
 - **Your dashboard** has the names of your people and devices in it. Don't share it here.
 
 ## Licence

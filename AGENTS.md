@@ -114,6 +114,7 @@ The robot needs speech recognition, a voice, and an assistant using them. Full d
 
 - **Speech recognition:** Whisper is the simplest (add-on store, or Docker `rhasspy/wyoming-whisper`). Parakeet was about five times quicker on the test server, but a little less accurate with names. Both run at home.
 - **Voice:** Piper (add-on or `rhasspy/wyoming-piper`). For the friendlier Fable voice, Kokoro plus the connector in [voice/](voice/), which falls back to Piper. Kokoro needs about 3 GB of memory and takes a few seconds per reply, so set `speech_wait: true` on the card.
+- **Bop voices:** each Bop (face character) has a voice. When a screen picks a Bop, the card makes a copy of the voice device's assistant with only the voice changed and switches to it, but only if the assistant's voice service has that voice (the Kokoro connector has all of them). With Piper or another service, the voice stays as it is. `bop_voices: false` on the card turns this off. Tell the person this happens before they pick a Bop, since it adds assistants under **Settings > Voice assistants**.
 - Each is added through the **Wyoming Protocol** integration, then chosen under **Settings > Voice assistants**. Assign that assistant to their voice device.
 - These services have no password: keep their ports inside the home.
 
@@ -162,7 +163,7 @@ Home Assistant's built-in assistant only understands set phrases. A chat AI cope
       url: http://127.0.0.1:2283
   ```
 
-  The key needs only Immich's `album.read` and `asset.view`. An Immich address outside the home network is refused. An `echo_robot:` section turns the settings page off, so if they set Beepbot up on the settings page, move those settings into this section too (see Step 3), delete the Beepbot entry under **Settings > Devices & services**, then restart (in that order: deleting the entry takes the cards out until the next start).
+  The key needs only Immich's `album.read`, `asset.read` and `asset.view` (newer Immich needs `asset.read` to list an album's photos). An Immich address outside the home network is refused. An `echo_robot:` section turns the settings page off, so if they set Beepbot up on the settings page, move those settings into this section too (see Step 3), delete the Beepbot entry under **Settings > Devices & services**, then restart (in that order: deleting the entry takes the cards out until the next start).
 - **Lyrics timing:** if lyrics run early or late, `lyrics_offset` (seconds) on the card, or the Earlier/Later buttons on the screen.
 - **Your own trigger words:** the `REACTIONS` table in the card. Updates replace that file, so suggest a pull request.
 

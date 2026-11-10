@@ -113,7 +113,7 @@ Fable takes a few seconds to prepare each reply, so the words would appear on sc
 
 The connector keeps short phrases it has already said in memory, never on disk, so repeats like "Turned on the light." start instantly. It also has eight short openers ready, like "Sure thing.". These were tried as a way to start talking sooner, but they weren't worth it: they can only play once the AI has finished, so "Let me see." sounds silly when the answer is already there.
 
-As well as Fable, it also has George, Emma and Heart. It splits long sentences at commas so it can start speaking sooner, and it tidies up things that sound wrong read aloud, like "11°C".
+As well as Fable, it also has Lewis, Sarah, Sky, Echo, Onyx and Santa, which the robot's Bops can use (a voice the connector hasn't got falls back to Fable). It splits long sentences at commas so it can start speaking sooner, and it tidies up things that sound wrong read aloud, like "11°C".
 
 ## 4. A smarter assistant (optional)
 

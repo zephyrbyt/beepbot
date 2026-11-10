@@ -55,6 +55,8 @@ const DEFAULTS = {
   talk: false,               // talk to it from this screen: Space or the mic button (for a PC; needs a secure connection)
   talk_device: null,         // which device a request counts as coming from, so timers ring there; the Echo by default
   desktop: false,            // scale everything up to fill a big window
+  bop: null,                 // which Bop (face character) this screen shows, by id; each screen picks its own in Settings
+  bop_voices: true,          // a Bop's voice: switch this Echo to a copy of its assistant with that voice; false keeps one voice
   lights: [
     { entity: 'light.bedroom_light', name: 'Bedroom' },
     { entity: 'light.office_light', name: 'Office' },
@@ -168,6 +170,432 @@ const MOODS = {
   sleepy:    { eye: 'closed', mouth: 'small', props: ['z', 'z'], anim: 'snooze' },
   confused:  { eye: 'odd',    mouth: 'wiggle', props: ['question'], anim: 'tilt' },
 };
+// ---- Skits: the robot itself acts out a tiny story, and something small happens around it. ----
+// ("Skit", so they aren't mixed up with Home Assistant scenes.) Each skit is made of the same few pieces: drawings on a layer behind the face (back), in front of it (front),
+// stuck to the head (kit) or inside each eye (eyeKit); movements for the head (rb), both eyes (eyes), each eye
+// (eye, eyeL, eyeR) and the mouth, written in seconds; and beats, changes of expression part-way through.
+// "flip" skits can happen from either side. Only transform and opacity move, so the Echo's graphics chip does the work.
+const SC_ART = {
+  car: '<svg viewBox="0 0 250 110"><path fill="#ff6a45" d="M12 74c0-14 8-22 24-24l26-3c14-20 28-28 46-28h52c18 0 32 10 44 28l26 5c10 2 16 10 16 22v8c0 5-4 8-8 8H20c-5 0-8-3-8-8Z"/><path fill="#fff" opacity=".9" d="M78 47c9-13 18-19 30-19h18v19ZM140 28h20c12 0 22 6 30 19h-50Z"/><circle cx="23" cy="64" r="6" fill="#ffe680"/><path stroke="#c94a2c" stroke-width="4" stroke-linecap="round" d="M122 60h14"/></svg>',
+  wheel: '<svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="21" fill="#1d2233"/><circle cx="22" cy="22" r="10" fill="#dfe4ee"/><path d="M22 13v18M13 22h18" stroke="#1d2233" stroke-width="4"/></svg>',
+  speed: '<svg viewBox="0 0 120 80"><path fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" d="M10 12h70M34 42h82M2 70h58"/></svg>',
+  // a little grey rain cloud with a cheeky face
+  cloud: '<svg viewBox="0 0 380 120"><g fill="#d6dee9"><circle cx="90" cy="64" r="40"/><circle cx="176" cy="52" r="46"/><circle cx="262" cy="58" r="42"/><circle cx="322" cy="80" r="30"/><circle cx="52" cy="84" r="28"/><rect x="40" y="64" width="300" height="44" rx="22"/></g><rect x="36" y="88" width="308" height="22" rx="11" fill="#aab7ca"/><g fill="#56637a"><ellipse cx="164" cy="70" rx="7" ry="9"/><ellipse cx="214" cy="70" rx="7" ry="9"/></g><path d="M176 86q13 9 26 0" stroke="#56637a" stroke-width="5" fill="none" stroke-linecap="round"/></svg>',
+  // an umbrella canopy that opens on top of its head (no handle to dangle in front of its face)
+  umbrella: `<svg viewBox="0 0 640 140"><rect x="312" y="0" width="16" height="34" rx="7" fill="#3a3f52"/><path fill="#ffd34d" d="M0 130C20 60 150 30 320 30S620 60 640 130${'q-40-24-80 0'.repeat(8)}Z"/><path fill="none" stroke="#e0a400" stroke-width="6" stroke-linecap="round" d="M320 34Q290 70 240 128M320 34Q350 70 400 128M320 34Q230 56 160 128M320 34Q410 56 480 128M320 34Q170 50 80 128M320 34Q470 50 560 128"/></svg>`,
+  whoosh: '<svg viewBox="0 0 18 110"><path stroke="#e6f3ff" stroke-width="8" stroke-linecap="round" d="M9 6v98"/></svg>',
+  splash: '<svg viewBox="0 0 50 26"><path fill="none" stroke="#a8dcff" stroke-width="6" stroke-linecap="round" d="M8 24 2 8M25 18V2M42 24l6-16"/></svg>',
+  frost: '<svg viewBox="0 0 100 120"><path fill="#bfe3fb" d="M8 64l6-7 8 7 9-9 9 8 10-9 10 10 8-8 8 10 8-8 8 6v12a40 40 0 0 1-40 40h-4A40 40 0 0 1 8 76Z"/><path stroke="#fff" stroke-width="3" stroke-linecap="round" d="M30 84v12M24 90h12M66 92v10M61 97h10M50 72v8M46 76h8"/></svg>',
+  icicle: '<svg viewBox="0 0 18 46"><path fill="#bfe3fb" stroke="#fff" stroke-width="2" stroke-linejoin="round" d="M1 1h16L9 45Z"/></svg>',
+  breath: '<svg viewBox="0 0 90 56"><g fill="#fff"><circle cx="24" cy="34" r="20"/><circle cx="48" cy="24" r="22"/><circle cx="68" cy="36" r="18"/></g></svg>',
+  sweat: '<svg viewBox="0 0 34 48"><path fill="#8fd3ff" d="M17 2c8 13 15 21 15 30a15 15 0 0 1-30 0c0-9 7-17 15-30Z"/><path stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none" d="M10 32a7 7 0 0 0 5 8"/></svg>',
+  heat: '<svg viewBox="0 0 30 110"><path fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" d="M15 4Q2 21 15 38T15 72T15 106"/></svg>',
+  butterfly: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 11C9 5 5 3 3 4.5 1 6 2 11 5 12c-2 1-3 4-1 6 2 1.8 6-1 8-5 2 4 6 6.8 8 5 2-2 1-5-1-6 3-1 4-6 2-7.5C19 3 15 5 12 11Z"/></svg>',
+  bolt: '<svg viewBox="0 0 120 190"><path fill="#ffe14d" stroke="#fff" stroke-width="5" stroke-linejoin="round" d="M76 2 20 100h38L36 188l68-112H64L96 2Z"/></svg>',
+  spark: '<svg viewBox="0 0 40 30"><path fill="none" stroke="#ffe14d" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" d="M2 26 14 6l8 16L38 4"/></svg>',
+  ghost: '<svg viewBox="0 0 100 110"><path fill="#f0f4ff" d="M50 4C26 4 10 22 10 46v56l14-10 13 12 13-12 13 12 13-12 14 10V46C90 22 74 4 50 4Z"/><ellipse cx="37" cy="46" rx="6" ry="9" fill="#1d2233"/><ellipse cx="63" cy="46" rx="6" ry="9" fill="#1d2233"/></svg>',
+  bang: '<svg viewBox="0 0 40 100"><path stroke="currentColor" stroke-width="15" stroke-linecap="round" d="M20 10v50"/><circle cx="20" cy="86" r="9" fill="currentColor"/></svg>',
+  shock: '<svg viewBox="0 0 800 470"><path fill="none" stroke="currentColor" stroke-width="11" stroke-linecap="round" d="M104 118 62 96M86 214H40M110 312l-40 22M696 118l42-22M714 214h46M690 312l40 22"/></svg>',
+  z: '<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M6 5h12L6 19h12"/></svg>',
+  fly: '<svg viewBox="0 0 36 28"><ellipse cx="11" cy="9" rx="9" ry="5.5" fill="#fff" opacity=".8" transform="rotate(-28 11 9)"/><ellipse cx="25" cy="9" rx="9" ry="5.5" fill="#fff" opacity=".8" transform="rotate(28 25 9)"/><ellipse cx="18" cy="18" rx="7" ry="8" fill="#1d2233" stroke="#fff" stroke-width="1.5"/></svg>',
+  pop: '<svg viewBox="0 0 100 100"><path fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" d="M50 8v16M50 76v16M8 50h16M76 50h16M20 20l11 11M69 69l11 11M80 20 69 31M31 69 20 80"/></svg>',
+  train: (() => {
+    const car = (x) => `<rect x="${x - 14}" y="80" width="16" height="7" fill="#2a2f45"/><rect x="${x}" y="22" width="262" height="14" rx="7" fill="#2a2f45"/><rect x="${x + 6}" y="30" width="250" height="70" rx="10" fill="#3fb07f"/>`
+      + [0, 1, 2, 3].map((j) => { const wx = x + 24 + j * 58; return `<rect x="${wx}" y="44" width="40" height="30" rx="8" fill="#fff" opacity=".9"/>` + ((x / 2 + j) % 3 ? `<rect x="${wx + 11}" y="52" width="6" height="10" rx="3" fill="#2a2f45"/><rect x="${wx + 23}" y="52" width="6" height="10" rx="3" fill="#2a2f45"/>` : ''); }).join('')
+      + [40, 70, 192, 222].map((w) => `<circle cx="${x + w}" cy="104" r="10" fill="#2a2f45"/><circle cx="${x + w}" cy="104" r="4" fill="#dfe4ee"/>`).join('');
+    return `<svg viewBox="0 0 1240 130"><rect x="10" y="96" width="290" height="12" rx="4" fill="#2a2f45"/><path fill="#2a2f45" d="M0 112 22 86h12v26Z"/>`
+      + '<rect x="28" y="46" width="180" height="54" rx="22" fill="#e2412f"/><rect x="22" y="42" width="30" height="60" rx="10" fill="#2a2f45"/><path fill="#2a2f45" d="M58 48V22h-6V12h38v10h-6v26Z"/><path fill="#ffd34d" d="M112 47a16 16 0 0 1 32 0Z"/><circle cx="22" cy="62" r="7" fill="#ffe680"/>'
+      + '<rect x="206" y="20" width="88" height="80" rx="6" fill="#e2412f"/><rect x="198" y="10" width="104" height="14" rx="5" fill="#2a2f45"/><rect x="226" y="34" width="46" height="32" rx="6" fill="#fff" opacity=".85"/>'
+      + '<rect x="296" y="80" width="14" height="7" fill="#2a2f45"/><rect x="306" y="50" width="94" height="50" rx="6" fill="#2a2f45"/><path fill="#151826" d="M310 52q10-16 22-6 10-14 22-4 10-14 22-4 10-12 20 14Z"/><circle cx="330" cy="104" r="11" fill="#2a2f45"/><circle cx="380" cy="104" r="11" fill="#2a2f45"/>'
+      + car(412) + car(688) + car(964) + '</svg>';
+  })(),
+  track: `<svg viewBox="0 0 960 16"><rect y="2" width="960" height="5" rx="2" fill="currentColor"/>${Array.from({ length: 21 }, (_, i) => `<rect x="${i * 46 + 4}" y="8" width="26" height="7" rx="2" fill="currentColor"/>`).join('')}</svg>`,
+};
+// One drawing on a layer: a class, where it sits, and what's inside.
+const scPiece = (cls, style, inner = '') => `<i class="${cls}" style="${style}">${inner}</i>`;
+// n pieces, spread out by a fixed step so they look scattered without being random.
+const scMany = (n, make) => Array.from({ length: n }, (_, i) => make(i)).join('');
+// Keyframes written in seconds, turned into percentages of the whole skit. A step without ":" is a transform.
+// The first and last steps hold until the start and end, so nothing drifts back on its own.
+const scKeys = (name, total, steps) => {
+  const all = [...(steps[0][0] > 0 ? [[0, steps[0][1]]] : []), ...steps, ...(steps.at(-1)[0] < total ? [[total, steps.at(-1)[1]]] : [])];
+  return `@keyframes ${name}{${all.map(([t, css]) => `${+(t / total * 100).toFixed(2)}%{${css.includes(':') ? css : `transform:${css}`}}`).join('')}}`;
+};
+const skSide = (px) => `calc(var(--dir)*${px})`; // a sideways distance that flips with the skit
+// The robot's own reactions, reused by several scenes: a "!" beside it, a sweat drop, blushing, shock lines.
+const scBang = (at) => scPiece('sk-bang', `left:70px;top:92px;animation-delay:${at}s`, SC_ART.bang); // on the front layer, beside the face
+const scSweat = (at, left = 664, top = 92) => scPiece('sk-sweat', `left:${left}px;top:${top}px;animation-delay:${at}s`, SC_ART.sweat);
+const scBlush = (at) => scPiece('sk-blush', `left:120px;top:300px;animation-delay:${at}s`) + scPiece('sk-blush', `left:584px;top:300px;animation-delay:${at}s`);
+const scShock = (at) => scPiece('sk-shock', `left:0;top:0;animation-delay:${at}s`, SC_ART.shock);
+// Rain: a little cloud follows the robot about, raining only on it. Its face ducks down and shrinks to make room for
+// the cloud above it, then it dodges one way and the other, but the cloud keeps up. Two endings share this start.
+const rainAt = (x, y = 100, s = '.64') => `translate(${skSide(`${x}px`)},${y}px) scale(${s})`;
+const RAIN_ENDINGS = ['umbrella', 'raincloud']; // the rain story's two endings take turns
+const RAIN_DUCK = 'translate(0px,100px) scale(.64)';
+const rainLook = (x) => `translate(${skSide(`${x}px`)},-34px)`;
+const RAIN = {
+  rb: [[0, 'none'], [0.55, RAIN_DUCK], [0.9, RAIN_DUCK], [1.0, 'translate(0px,108px) scale(.67,.6)'], [1.15, RAIN_DUCK],
+    [1.5, RAIN_DUCK], [1.72, rainAt(-190)], [2.4, rainAt(-190)], [2.62, rainAt(120)]],
+  // looks up at the cloud; after each dodge it looks back at where the cloud is, until it catches up
+  eyes: [[0, 'none'], [0.45, rainLook(0)], [0.95, rainLook(0)], [1.05, 'translate(0px,-20px)'], [1.2, rainLook(0)],
+    [1.72, rainLook(36)], [2.0, rainLook(36)], [2.1, rainLook(0)], [2.62, rainLook(-36)], [2.9, rainLook(-36)], [3.0, rainLook(0)]],
+  eye: [[0, 'none'], [0.95, 'none'], [1.0, 'scaleY(.5)'], [1.12, 'none']],
+  // fed up when it rains on it, pleased when it dodges, fed up again when the cloud catches up
+  beats: [[1000, { eye: 'half', mouth: 'frown' }], [1750, { eye: 'round', mouth: 'smile' }], [2120, { eye: 'half', mouth: 'frown' }],
+    [2650, { eye: 'round', mouth: 'smile' }], [3020, { eye: 'half', mouth: 'frown' }]],
+  cloud: [[0, 'translate(640px,-40px)'], [0.75, 'none'], [1.82, 'none'], [2.1, 'translateX(-190px)'], [2.72, 'translateX(-190px)'], [3.0, 'translateX(120px)']],
+};
+// The cloud with its rain (which moves with it); "end" is which ending, for its own timings.
+const scRainCloud = (few, end, extra = '') => {
+  const n = few(9);
+  return scPiece(`sk-cloud sk-cloud-${end}`, 'left:290px;top:-6px', SC_ART.cloud
+    + scPiece(`sk-pour sk-pour-${end}`, '', scMany(n, (i) => scPiece('sk-drop', `left:${Math.round(44 + i * 290 / (n - 1))}px;top:100px;animation-delay:-${((i * 4) % n * 0.5 / n).toFixed(2)}s`)))
+    + extra);
+};
+const RAIN_CSS = `.sk-cloud{width:380px;height:120px}
+.sk-pour{left:0;top:0;width:380px;height:120px}
+.sk-drop{width:7px;height:30px;border-radius:4px;background:#a8dcff;opacity:0;animation:sk-drop .5s linear infinite}
+@keyframes sk-drop{0%{opacity:0;transform:none}8%{opacity:1}100%{opacity:1;transform:translateY(400px)}}`;
+const SKITS = {
+  // A car zooms past: its eyes follow it, the wind blows its face sideways, and it squints and coughs in the dust.
+  car: {
+    ms: 3600, eye: 'round', mouth: 'o', flip: true,
+    beats: [[1000, { mouth: 'wiggle' }], [2600, { eye: 'happy', mouth: 'grin' }]],
+    front: (few) => scPiece('sc-car', 'left:0;top:326px', SC_ART.car + scPiece('sc-wheel', 'left:40px;top:66px', SC_ART.wheel) + scPiece('sc-wheel', 'left:174px;top:66px', SC_ART.wheel) + scPiece('sc-speed', 'left:250px;top:18px', SC_ART.speed))
+      + scMany(few(7), (i) => scPiece('sc-dust', `left:${[700, 580, 450, 320, 190, 520, 360][i]}px;top:${[330, 300, 318, 296, 326, 214, 196][i]}px;animation-delay:${[0.52, 0.6, 0.68, 0.76, 0.84, 0.86, 0.92][i]}s`)),
+    moves: {
+      eyes: [[0, 'none'], [0.25, `translate(${skSide('44px')},12px)`], [0.48, `translate(${skSide('44px')},12px)`], [0.62, `translate(${skSide('18px')},22px)`], [0.84, `translate(${skSide('-62px')},22px)`], [1, `translate(${skSide('-70px')},16px)`], [2.3, `translate(${skSide('-46px')},10px)`], [2.8, 'none']],
+      eye: [[0, 'none'], [0.9, 'none'], [1.02, 'scaleY(.3)'], [1.3, 'scaleY(.4)'], [1.6, 'scaleY(.26)'], [2.2, 'scaleY(.36)'], [2.45, 'none']],
+      rb: [[0, 'none'], [0.6, 'none'], [0.72, `translateX(${skSide('-28px')}) skewX(${skSide('10deg')}) rotate(${skSide('-2deg')})`], [0.92, `translateX(${skSide('10px')}) skewX(${skSide('-4deg')})`], [1.1, `translateX(${skSide('-4px')}) skewX(${skSide('2deg')})`], [1.25, 'none'], [1.62, 'none'], [1.7, 'translateY(9px) scale(1.03,.96)'], [1.84, 'none'], [2, 'none'], [2.08, 'translateY(9px) scale(1.03,.96)'], [2.22, 'none']],
+      mouth: [[0, 'none'], [1.62, 'none'], [1.7, 'scale(1.2,.75)'], [1.84, 'none'], [2, 'none'], [2.08, 'scale(1.2,.75)'], [2.22, 'none']],
+    },
+    css: `.sc-car{width:250px;height:110px;animation:sc-car 3.6s linear both}
+.sc-wheel{width:44px;height:44px;animation:sc-spin .22s linear infinite}
+.sc-speed{width:120px;height:80px;color:var(--ink);opacity:.7}
+.sc-dust{width:150px;height:150px;margin:-75px 0 0 -75px;border-radius:50%;background:#efe2c4;opacity:0;animation:sc-dust 1.6s ease-out both}
+${scKeys('sc-car', 3.6, [[0, 'translateX(1000px)'], [0.32, 'transform:translateX(1000px);animation-timing-function:cubic-bezier(.5,0,.9,.7)'], [1.15, 'translateX(-480px)']])}
+@keyframes sc-spin{to{transform:rotate(-360deg)}}
+@keyframes sc-dust{0%{opacity:0;transform:scale(.25)}12%{opacity:.85}100%{opacity:0;transform:translateX(-70px) scale(1.7)}}`,
+  },
+  // A steam train chugs past along the bottom: the robot leans up to watch, bobs to the clackety rhythm, its eyes
+  // flick along the carriages (little robots ride in the windows), it toots along with the whistle and waves it off.
+  train: {
+    ms: 4800, eye: 'round', mouth: 'small', flip: true,
+    beats: [[1350, { mouth: 'o' }], [1900, { mouth: 'smile' }], [3700, { eye: 'happy', mouth: 'grin' }]],
+    back: () => scPiece('sc-track', 'left:0;top:452px', SC_ART.track),
+    front: () => {
+      const k = 1, wheel = (cx, cy, r) => scPiece('sc-wheel', `left:${Math.round((cx - r) * k)}px;top:${Math.round((cy - r) * k)}px;width:${Math.round(2 * r * k)}px;height:${Math.round(2 * r * k)}px`, SC_ART.wheel);
+      return scPiece('sc-train', 'left:0;top:336px', SC_ART.train + wheel(60, 104, 14) + wheel(120, 100, 22) + wheel(176, 100, 22) + wheel(252, 104, 16)
+        + scMany(3, (i) => scPiece('sc-chuff', `animation-delay:${(i * 0.3).toFixed(1)}s`, SC_ART.breath)) + scPiece('sc-toot', '', SC_ART.breath));
+    },
+    moves: (() => {
+      // leans up to watch, bobs to the rhythm (with a hop for the whistle), then sways goodbye
+      const up = 'translateY(-50px) scale(.88)', rb = [[0, 'none'], [0.5, up]];
+      for (let t = 0.8; t < 3.75; t += 0.3) {
+        if (t > 1.3 && t < 1.7) continue;
+        rb.push([+t.toFixed(2), Math.round(t * 10 / 3) % 2 ? 'translateY(-43px) scale(.88)' : up]);
+      }
+      rb.push([1.38, up], [1.48, 'translateY(-66px) scale(.9,.86)'], [1.62, up]);
+      rb.sort((a, b) => a[0] - b[0]);
+      rb.push([3.8, up], [4, `${up} rotate(-3deg)`], [4.2, `${up} rotate(3deg)`], [4.6, 'none']);
+      const at = (x, y = 22) => `translate(${skSide(`${x}px`)},${y}px)`;
+      return {
+        rb,
+        eyes: [[0, 'none'], [0.4, at(46, 18)], [1, at(44)], [1.6, at(0)], [2, at(-44)], [2.1, at(40)], [2.7, at(-40)], [2.8, at(40)], [3.4, at(-40)], [3.5, at(30)], [3.9, at(-50, 18)], [4.4, 'none']],
+      };
+    })(),
+    css: `.sc-track{width:960px;height:16px;color:var(--ink);opacity:.45}
+.sc-train{width:1240px;height:130px;animation:sc-train 4.8s linear both}
+.sc-chuff,.sc-toot{left:36px;top:-30px;width:70px;height:44px;opacity:0}
+.sc-chuff g,.sc-toot g{fill:var(--ink)}
+.sc-chuff{animation:sc-chuff .9s ease-out infinite}
+.sc-toot{animation:sc-toot 1.1s 1.3s ease-out both}
+${scKeys('sc-train', 4.8, [[0, 'translateX(1000px)'], [0.5, 'translateX(1000px)'], [3.95, 'translateX(-1320px)']])}
+@keyframes sc-chuff{0%{opacity:0;transform:translateY(16px) scale(.4)}20%{opacity:.7}100%{opacity:0;transform:translate(70px,-110px) scale(1.6)}}
+@keyframes sc-toot{0%{opacity:0;transform:translateY(10px) scale(.5)}15%{opacity:.95}100%{opacity:0;transform:translate(110px,-150px) scale(2.6)}}`,
+  },
+  // Rain, ending 1: after dodging fails it pops open an umbrella on its head. The rain bounces off and runs off the
+  // edges, it looks smug, and the cloud huffs and gives up.
+  umbrella: {
+    ms: 5600, eye: 'round', mouth: 'small', flip: true,
+    beats: [...RAIN.beats, [3560, { eye: 'happy', mouth: 'grin' }], [5050, { eye: 'round', mouth: 'smile' }]],
+    // rain that now stops on the umbrella, with a splash where each drop lands (worked out from where the umbrella sits)
+    front: (few) => scRainCloud(few, 'a', scPiece('sk-pour sk-pour-short', '', [-220, -130, -45, 45, 130, 220].map((d, i) => {
+      const x = Math.round(190 + 0.64 * d), land = [172, 160, 155, 155, 160, 172][i], at = `animation-delay:-${[0, 0.21, 0.09, 0.27, 0.15, 0.04][i]}s`;
+      return scPiece('sk-tap', `left:${x - 4}px;top:${land - 62}px;${at}`) + scPiece('sk-splash', `left:${x - 16}px;top:${land - 15}px;${at}`, SC_ART.splash);
+    }).join(''))),
+    kit: () => scPiece('sk-brolly', 'left:80px;top:-86px', SC_ART.umbrella)
+      + scPiece('sk-shelter', '', scMany(4, (i) => scPiece('sk-runoff', `left:${[78, 714, 78, 714][i]}px;top:42px;animation-delay:-${[0, 0.22, 0.36, 0.5][i]}s`))),
+    moves: {
+      rb: [...RAIN.rb, [3.15, rainAt(120)], [3.3, rainAt(120, 108, '.66,.6')], [3.45, rainAt(120)], [3.5, rainAt(120)], [3.58, rainAt(120, 106, '.66,.61')], [3.7, rainAt(120)], [5.0, rainAt(120)], [5.5, 'none']],
+      eyes: [...RAIN.eyes, [3.15, rainLook(0)], [3.3, 'translate(0px,-10px)'], [3.5, rainLook(0)], [5.0, rainLook(0)], [5.4, 'none']],
+      eye: RAIN.eye,
+    },
+    css: `${RAIN_CSS}
+.sk-cloud-a{animation:sk-cloud-a 5.6s ease-in-out both}
+.sk-pour-a{animation:sk-pour-a 5.6s linear both}
+.sk-pour-short,.sk-shelter{left:0;top:0;width:100%;height:100%;opacity:0;animation:sk-wet-a 5.6s linear both}
+.sk-tap{width:7px;height:22px;border-radius:4px;background:#a8dcff;opacity:0;animation:sk-tap .36s linear infinite}
+.sk-splash{width:32px;height:17px;opacity:0;transform-origin:50% 100%;animation:sk-splash .36s ease-out infinite}
+.sk-runoff{width:9px;height:24px;border-radius:5px;background:#a8dcff;opacity:0;animation:sk-runoff .6s ease-in infinite}
+.sk-brolly{width:640px;height:140px;transform-origin:50% 93%;animation:sk-brolly 5.6s ease-in-out both}
+${scKeys('sk-cloud-a', 5.6, [...RAIN.cloud, [4.5, 'opacity:1;transform:translateX(120px)'], [4.62, 'opacity:1;transform:translateX(120px) scale(.9,1.1)'], [4.74, 'opacity:1;transform:translateX(120px) scale(1.06,.94)'], [4.86, 'opacity:1;transform:translateX(120px)'], [5.35, 'opacity:0;transform:translate(-120px,-150px) scale(.6)']])}
+${scKeys('sk-pour-a', 5.6, [[0, 'opacity:0'], [0.8, 'opacity:0'], [0.92, 'opacity:1'], [3.45, 'opacity:1'], [3.55, 'opacity:0']])}
+${scKeys('sk-wet-a', 5.6, [[0, 'opacity:0'], [3.5, 'opacity:0'], [3.6, 'opacity:1'], [4.5, 'opacity:1'], [4.6, 'opacity:0']])}
+${scKeys('sk-brolly', 5.6, [[0, 'opacity:0;transform:scale(.08,.3)'], [3.45, 'opacity:0;transform:scale(.08,.3)'], [3.5, 'opacity:1;transform:scale(.3,1.1)'], [3.62, 'opacity:1;transform:scale(1.12,.86)'], [3.76, 'opacity:1;transform:scale(.96,1.05)'], [3.9, 'opacity:1;transform:none'], [4.95, 'opacity:1;transform:none'], [5.08, 'opacity:1;transform:scale(.2,1.08)'], [5.16, 'opacity:0;transform:scale(.08,.6)']])}
+@keyframes sk-tap{0%{opacity:0;transform:none}15%{opacity:1}80%{opacity:1;transform:translateY(40px)}81%,100%{opacity:0;transform:translateY(40px)}}
+@keyframes sk-splash{0%,78%{opacity:0;transform:scale(.3)}84%{opacity:1;transform:scale(.7)}100%{opacity:0;transform:scale(1.25)}}
+@keyframes sk-runoff{0%{opacity:0;transform:none}15%{opacity:1}100%{opacity:0;transform:translateY(150px)}}`,
+  },
+  // Rain, ending 2: after dodging fails it glares, takes a big breath and blows the cloud away, then shakes itself
+  // dry like a dog.
+  raincloud: {
+    ms: 5600, eye: 'round', mouth: 'small', flip: true,
+    beats: [...RAIN.beats, [3250, { eye: 'angry', mouth: 'flat' }], [3420, { mouth: 'o' }], [4020, { eye: 'round', mouth: 'smile' }], [4300, { eye: 'squeeze', mouth: 'flat' }], [4830, { eye: 'happy', mouth: 'grin' }]],
+    front: (few) => scRainCloud(few, 'b') + scPiece('sk-gust', 'left:555px;top:380px;animation-delay:3.58s', SC_ART.breath) + scMany(3, (i) => scPiece('sk-whoosh', `left:${[542, 582, 622][i]}px;top:300px;animation-delay:${[3.6, 3.56, 3.64][i]}s`, SC_ART.whoosh))
+      + scMany(8, (i) => scPiece('sk-shed', `left:${[318, 306, 322, 312, 630, 642, 626, 636][i]}px;top:${[236, 290, 346, 400][i % 4]}px;--dx:${(i < 4 ? -1 : 1) * [110, 130, 120, 90][i % 4]}px;--dy:${[-50, -10, 30, 60][i % 4]}px;animation-delay:${(4.32 + (i % 4) * 0.08).toFixed(2)}s`)),
+    moves: {
+      rb: (() => {
+        const shake = (deg) => `${RAIN_DUCK} rotate(${deg}deg)`;
+        return [...RAIN.rb, [3.15, rainAt(120)], [3.45, rainAt(120, 80, '.69,.71')], [3.62, rainAt(120, 106, '.63,.6')], [3.9, rainAt(120)], [4.05, rainAt(120)], [4.28, shake(0)],
+          [4.38, shake(-8)], [4.46, shake(8)], [4.54, shake(-7)], [4.62, shake(6)], [4.7, shake(-3)], [4.78, shake(0)], [4.95, shake(0)], [5.35, 'none']];
+      })(),
+      eyes: [...RAIN.eyes, [3.15, rainLook(0)], [3.9, rainLook(0)], [4.05, rainLook(0)], [4.25, 'none']],
+      eye: RAIN.eye,
+    },
+    css: `${RAIN_CSS}
+.sk-cloud-b{animation:sk-cloud-b 5.6s ease-in-out both}
+.sk-pour-b{animation:sk-pour-b 5.6s linear both}
+.sk-gust{width:90px;height:56px;opacity:0;animation:sk-gust .45s ease-out both}
+.sk-whoosh{width:18px;height:110px;opacity:0;animation:sk-whoosh .4s ease-out both}
+.sk-shed{width:20px;height:20px;border-radius:50%;background:#a8dcff;opacity:0;animation:sk-shed .5s ease-out forwards}
+${scKeys('sk-cloud-b', 5.6, [...RAIN.cloud, [3.66, 'opacity:1;transform:translateX(120px)'], [3.76, 'opacity:1;transform:translate(130px,-8px) scale(.88,1.1)'], [4.3, 'opacity:1;transform:translate(520px,-40px) rotate(14deg) scale(.85)'], [4.42, 'opacity:0;transform:translate(600px,-60px) rotate(18deg) scale(.8)']])}
+${scKeys('sk-pour-b', 5.6, [[0, 'opacity:0'], [0.8, 'opacity:0'], [0.92, 'opacity:1'], [3.66, 'opacity:1'], [3.76, 'opacity:0']])}
+@keyframes sk-gust{0%{opacity:0;transform:scale(.4)}20%{opacity:.8}100%{opacity:0;transform:translateY(-150px) scale(1.2)}}
+@keyframes sk-whoosh{0%{opacity:0;transform:translateY(40px) scaleY(.3)}25%{opacity:.9}100%{opacity:0;transform:translateY(-200px) scaleY(1.2)}}
+@keyframes sk-shed{0%{opacity:1;transform:none}100%{opacity:0;transform:translate(var(--dx),var(--dy))}}`,
+  },
+  // Bitter cold: it shivers with chattering teeth, frost creeps over its eyes, an icicle grows, it puffs out a cloud
+  // of breath, then shakes the whole lot off.
+  cold: {
+    ms: 4400, eye: 'round', mouth: 'wiggle',
+    beats: [[3650, { eye: 'happy', mouth: 'small' }]],
+    back: (few) => scMany(few(12), (i) => scPiece('sc-snow', `left:${(i * 43 + 3) % 100}%;animation-delay:-${(i * 0.37).toFixed(2)}s`)),
+    eyeKit: () => scPiece('sk-frost', '', SC_ART.frost),
+    kit: () => scPiece('sk-icicle', 'left:456px;top:370px', SC_ART.icicle) + scPiece('sk-breath', 'left:352px;top:300px;animation-delay:1.9s', SC_ART.breath) + scPiece('sk-breath', 'left:372px;top:304px;animation-delay:2.6s', SC_ART.breath),
+    moves: {
+      rb: 'sc-shiver .14s linear .3s 21, sc-shake-off .8s ease-in-out 3.3s forwards',
+      mouth: 'sc-chatter .09s linear .3s 32 alternate',
+    },
+    css: `.sc-snow{top:-20px;width:16px;height:16px;border-radius:50%;background:var(--ink);opacity:.85;animation:sc-snow 3.4s linear infinite}
+.sk-frost{left:0;top:0;width:100%;height:100%;transform-origin:50% 97%;animation:sk-frost 4.4s ease-out both}
+.sk-icicle{width:18px;height:46px;transform-origin:50% 0;animation:sk-icicle 4.4s ease-in-out both}
+.sk-breath{width:90px;height:56px;opacity:0;animation:sk-breath 1.3s ease-out both}
+@keyframes sc-snow{from{transform:translate(0,0)}50%{transform:translate(26px,250px)}to{transform:translate(-10px,510px)}}
+@keyframes sc-shiver{0%,100%{transform:none}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@keyframes sc-shake-off{0%,100%{transform:none}15%{transform:translateX(-14px) rotate(-7deg)}35%{transform:translateX(12px) rotate(6deg)}55%{transform:translateX(-8px) rotate(-4deg)}75%{transform:rotate(2deg)}}
+@keyframes sc-chatter{from{transform:none}to{transform:scale(1.06,.55)}}
+${scKeys('sk-frost', 4.4, [[0, 'opacity:0;transform:scale(.15)'], [0.4, 'opacity:0;transform:scale(.15)'], [0.7, 'opacity:1;transform:scale(.4)'], [1.7, 'opacity:1;transform:none'], [3.3, 'opacity:1;transform:none'], [3.55, 'opacity:0;transform:translateY(14px)']])}
+${scKeys('sk-icicle', 4.4, [[0, 'opacity:0;transform:scaleY(0)'], [1.2, 'opacity:1;transform:scaleY(0)'], [2.2, 'opacity:1;transform:none'], [3.35, 'opacity:1;transform:none'], [3.7, 'opacity:0;transform:translateY(70px) rotate(20deg)']])}
+@keyframes sk-breath{0%{opacity:0;transform:scale(.3)}20%{opacity:.85}100%{opacity:0;transform:translateY(-60px) scale(1.3)}}`,
+  },
+  // Melting in the heat: heat haze rises, it pants and sags, sweat runs down its face, then it shakes the drops off.
+  hot: {
+    ms: 4400, eye: 'half', mouth: 'o',
+    beats: [[2900, { eye: 'squeeze', mouth: 'wiggle' }], [3650, { eye: 'half', mouth: 'small' }]],
+    back: () => scMany(5, (i) => scPiece('sc-heat', `left:${[8, 25, 46, 68, 86][i]}%;animation-delay:${[0, 0.7, 0.35, 1.05, 0.5][i]}s`, SC_ART.heat)),
+    kit: () => scSweat(0.6) + scSweat(1.5, 104, 130),
+    front: () => scMany(6, (i) => scPiece('sc-flick', `left:${[220, 200, 240, 740, 760, 720][i]}px;top:${[190, 260, 130, 190, 260, 130][i]}px;--dx:${[-90, -110, -70, 90, 110, 70][i]}px;--dy:${[-30, 20, -70, -30, 20, -70][i]}px`)),
+    moves: {
+      rb: [[0, 'none'], [0.3, 'none'], [1.6, 'translateY(26px) scale(1.06,.88)'], [2.6, 'translateY(30px) scale(1.07,.86)'], [2.9, 'none'], [3.05, 'rotate(-6deg)'], [3.25, 'rotate(6deg)'], [3.45, 'rotate(-3deg)'], [3.6, 'none']],
+      eye: [[0, 'none'], [0.3, 'none'], [1.6, 'translateY(16px) scaleY(.84)'], [2.7, 'translateY(18px) scaleY(.82)'], [2.9, 'none']],
+      mouth: 'sc-pant .32s ease-in-out .3s 8 alternate',
+    },
+    css: `.sc-heat{top:340px;width:30px;height:110px;color:var(--ink);opacity:0;animation:sc-heat 1.8s ease-in infinite}
+.sk-sweat{width:42px;height:60px;opacity:0;animation:sk-sweat 1.6s ease-in both}
+.sc-flick{width:14px;height:14px;border-radius:50%;background:#8fd3ff;opacity:0;animation:sc-flick .55s 2.95s ease-out forwards}
+@keyframes sc-heat{0%{opacity:0;transform:none}30%{opacity:.35}100%{opacity:0;transform:translateY(-280px) scaleX(1.6)}}
+@keyframes sk-sweat{0%{opacity:0;transform:scale(.3)}15%{opacity:1;transform:none}75%{opacity:1;transform:translateY(150px)}100%{opacity:0;transform:translateY(220px) scale(.7)}}
+@keyframes sc-flick{0%{opacity:1;transform:none}100%{opacity:0;transform:translate(var(--dx),var(--dy))}}
+@keyframes sc-pant{from{transform:none}to{transform:scale(1.12,1.25)}}`,
+  },
+  // A butterfly flutters round its head and lands on its nose: the robot goes cross-eyed, giggles, and it flies off.
+  butterfly: {
+    ms: 6400, eye: 'round', mouth: 'o',
+    beats: [[2800, { mouth: 'small' }], [3800, { mouth: 'wiggle' }], [4700, { eye: 'happy', mouth: 'grin' }]],
+    front: () => scPiece('sc-bfly', '', `<b>${SC_ART.butterfly}</b>`),
+    moves: {
+      eyes: [[0, 'none'], [0.3, 'translate(-60px,-12px)'], [0.7, 'translate(-50px,-24px)'], [1.3, 'translate(-25px,-3px)'], [1.9, 'translate(23px,-21px)'], [2.4, 'translate(13px,2px)'], [2.75, 'translateY(16px)'], [4.6, 'translateY(16px)'], [5, 'translate(23px,-13px)'], [5.6, 'translate(53px,-29px)'], [6.05, 'translate(60px,-34px)'], [6.4, 'none']],
+      eyeL: [[0, 'none'], [2.75, 'none'], [3, 'translateX(44px) scale(.9)'], [4.5, 'translateX(44px) scale(.9)'], [4.75, 'none']],
+      eyeR: [[0, 'none'], [2.75, 'none'], [3, 'translateX(-44px) scale(.9)'], [4.5, 'translateX(-44px) scale(.9)'], [4.75, 'none']],
+      rb: [[0, 'none'], [3.8, 'none'], [3.9, 'rotate(-2deg)'], [4, 'rotate(2deg)'], [4.1, 'rotate(-2deg)'], [4.2, 'rotate(2deg)'], [4.3, 'rotate(-1deg)'], [4.4, 'none']],
+    },
+    css: `.sc-bfly{left:0;top:0;width:76px;height:76px;color:#ffd34d;animation:sc-bfly 6.4s ease-in-out both}
+.sc-bfly b{display:block;width:100%;height:100%;animation:sc-flap .16s linear 0s 17 alternate,sc-flap .6s ease-in-out 2.75s 3 alternate,sc-flap .16s linear 4.6s infinite alternate}
+@keyframes sc-flap{from{transform:none}to{transform:scaleX(.4)}}
+${scKeys('sc-bfly', 6.4, [[0, 'translate(-120px,142px)'], [0.7, 'translate(142px,52px)'], [1.3, 'translate(292px,182px)'], [1.9, 'translate(582px,72px)'], [2.4, 'translate(522px,212px)'], [2.75, 'translate(442px,262px)'], [4.6, 'translate(442px,262px)'], [5, 'translate(582px,122px)'], [5.6, 'translate(762px,22px)'], [6.1, 'translate(1060px,-100px)']])}`,
+  },
+  // Struck by lightning: a flash, its eyes go to crosses, it fizzes with sparks and a puff of smoke, then blinks back.
+  zap: {
+    ms: 3400, eye: 'round', mouth: 'o',
+    beats: [[180, { eye: 'x', mouth: 'wiggle' }], [1600, { eye: 'round', mouth: 'o' }], [2500, { eye: 'happy', mouth: 'small' }]],
+    front: () => scPiece('sc-bolt', 'left:420px;top:-40px', SC_ART.bolt) + scPiece('sc-flash', 'left:0;top:0'),
+    kit: () => scMany(4, (i) => scPiece('sk-spark', `left:${[110, 650, 84, 676][i]}px;top:${[40, 30, 290, 280][i]}px;animation-delay:${[0.35, 0.45, 0.55, 0.4][i]}s`, SC_ART.spark))
+      + scMany(3, (i) => scPiece('sk-smoke', `left:${[372, 404, 350][i]}px;top:${[40, 30, 22][i]}px;animation-delay:${[1.1, 1.35, 1.6][i]}s`)),
+    moves: {
+      rb: 'sc-jitter .08s linear .3s 14 alternate',
+      eye: [[0, 'opacity:1'], [0.35, 'opacity:1'], [0.45, 'opacity:.3'], [0.5, 'opacity:1'], [0.62, 'opacity:.4'], [0.7, 'opacity:1'], [1, 'opacity:.5'], [1.05, 'opacity:1']],
+    },
+    css: `.sc-bolt{width:120px;height:190px;transform-origin:50% 0;opacity:0;animation:sc-bolt 3.4s linear both}
+.sc-flash{width:960px;height:470px;background:#fff;opacity:0;animation:sc-flash 3.4s linear both}
+.sk-spark{width:60px;height:45px;opacity:0;animation:sk-spark .3s steps(2,jump-none) 4}
+.sk-smoke{width:72px;height:72px;border-radius:50%;background:#e2e6ee;opacity:0;animation:sk-smoke 1.4s ease-out both}
+@keyframes sc-jitter{from{transform:translate(-5px,2px) rotate(-1deg)}to{transform:translate(5px,-3px) rotate(1deg)}}
+${scKeys('sc-bolt', 3.4, [[0, 'opacity:0;transform:scaleY(0)'], [0.24, 'opacity:0;transform:scaleY(0)'], [0.3, 'opacity:1;transform:none'], [0.38, 'opacity:.2;transform:none'], [0.44, 'opacity:1;transform:none'], [0.6, 'opacity:1;transform:none'], [0.75, 'opacity:0;transform:none']])}
+${scKeys('sc-flash', 3.4, [[0, 'opacity:0'], [0.28, 'opacity:0'], [0.31, 'opacity:.55'], [0.4, 'opacity:0'], [0.46, 'opacity:.3'], [0.55, 'opacity:0']])}
+@keyframes sk-spark{from{opacity:1}to{opacity:0}}
+@keyframes sk-smoke{0%{opacity:0;transform:scale(.4)}15%{opacity:.85}100%{opacity:0;transform:translateY(-60px) scale(1.5)}}`,
+  },
+  // A ghost rises up beside it. The robot slowly looks round, the ghost shouts boo, and the robot jumps out of its skin.
+  ghost: {
+    ms: 4800, eye: 'round', mouth: 'small', flip: true,
+    beats: [[1000, { mouth: 'flat' }], [2000, { mouth: 'o' }], [3300, { mouth: 'wiggle' }], [4200, { eye: 'happy', mouth: 'small' }]],
+    back: () => scPiece('sc-ghost', 'left:770px;top:140px', `<b>${SC_ART.ghost}<u></u></b>`),
+    front: () => scBang(2.1),
+    kit: () => scSweat(3.2) + scShock(2.1),
+    moves: {
+      eyes: [[0, 'none'], [1, 'none'], [1.75, `translateX(${skSide('54px')})`], [2.05, `translateX(${skSide('54px')})`], [2.15, 'translateY(-10px)'], [3.2, 'none'], [3.5, `translateX(${skSide('30px')})`], [3.9, 'none']],
+      eye: [[0, 'none'], [2.05, 'none'], [2.12, 'scale(1.26)'], [2.6, 'scale(1.2)'], [3, 'none']],
+      rb: [[0, 'none'], [2.05, 'none'], [2.15, 'translateY(-50px) scale(1.07)'], [2.4, 'translateY(-32px) scale(1.05)'], [2.6, 'none'], [2.7, 'translateX(-4px)'], [2.8, 'translateX(4px)'], [2.9, 'translateX(-4px)'], [3, 'translateX(4px)'], [3.1, 'translateX(-3px)'], [3.2, 'none']],
+    },
+    css: `.sc-ghost{width:170px;height:187px;animation:sc-ghost 4.8s ease-in-out both}
+.sc-ghost b{display:block;width:100%;height:100%;animation:sc-ghost-sway 1s ease-in-out infinite alternate}
+.sc-ghost u{position:absolute;left:76px;top:110px;width:18px;height:22px;border-radius:50%;background:#1d2233;transform:scale(.6);animation:sc-boo 4.8s ease-in-out both}
+@keyframes sc-ghost-sway{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}
+${scKeys('sc-ghost', 4.8, [[0, 'opacity:0;transform:translateY(330px)'], [0.4, 'opacity:0;transform:translateY(330px)'], [1.4, 'opacity:.92;transform:none'], [1.9, 'opacity:.92;transform:translate(-10px,-8px)'], [2.05, 'opacity:.95;transform:translate(-90px,10px) scale(1.35)'], [2.5, 'opacity:.92;transform:translate(-60px,0) scale(1.2)'], [3.1, 'opacity:.9;transform:translate(30px,-60px)'], [3.7, 'opacity:0;transform:translate(60px,-160px)']])}
+${scKeys('sc-boo', 4.8, [[0, 'transform:scale(.6)'], [1.95, 'transform:scale(.6)'], [2.05, 'transform:scale(1.5,1.8)'], [2.6, 'transform:scale(1.4,1.6)'], [2.8, 'transform:scale(.6)']])}`,
+  },
+  // Ah... ah... CHOO! A big build-up, a sneeze that throws its head forward, a shake, a sniff.
+  sneeze: {
+    ms: 3400, eye: 'half', mouth: 'o',
+    beats: [[950, { eye: 'squeeze' }], [1420, { mouth: 'grin' }], [2300, { eye: 'round', mouth: 'small' }], [2900, { eye: 'happy', mouth: 'smile' }]],
+    front: () => scMany(12, (i) => { const a = Math.PI * (0.08 + (i / 11) * 0.84), r = 120 + ((i * 53) % 90); return scPiece('sc-spray', `left:480px;top:374px;--dx:${Math.round(Math.cos(a) * r * 1.6)}px;--dy:${Math.round(Math.sin(a) * r * 0.7)}px`); }),
+    moves: {
+      rb: [[0, 'none'], [0.5, `rotate(${skSide('-3deg')}) translateY(-8px) scale(1.02)`], [0.75, `rotate(${skSide('-3deg')}) translateY(-8px) scale(1.02)`], [1.25, `rotate(${skSide('-6deg')}) translateY(-16px) scale(1.05)`], [1.4, `rotate(${skSide('-6.5deg')}) translateY(-18px) scale(1.05)`], [1.48, `rotate(${skSide('4deg')}) translateY(18px) scale(1.08,.92)`], [1.62, `rotate(${skSide('2deg')}) translateY(6px) scale(1.02,.98)`], [1.8, 'rotate(-4deg)'], [1.95, 'rotate(4deg)'], [2.1, 'rotate(-2deg)'], [2.25, 'none']],
+      mouth: [[0, 'scale(.6)'], [0.5, 'scale(.85)'], [0.75, 'scale(.85)'], [1.25, 'scale(1.15,1.3)'], [1.45, 'scale(1.2,1.35)'], [1.52, 'none']],
+    },
+    css: `.sc-spray{width:13px;height:13px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--eye);opacity:0;animation:sc-spray .6s 1.48s ease-out forwards}
+@keyframes sc-spray{0%{opacity:.9;transform:none}100%{opacity:0;transform:translate(var(--dx),var(--dy))}}`,
+  },
+  // Hiccups: hic! hic! hic! It looks relieved they've stopped... hic!
+  hiccup: {
+    ms: 4600, eye: 'round', mouth: 'small',
+    beats: [[2950, { eye: 'happy', mouth: 'smile' }], [3720, { eye: 'round', mouth: 'flat' }]],
+    kit: () => [0.5, 1.5, 2.4, 3.7].map((at) => scPiece('sk-hic', `left:381px;top:344px;animation-delay:${at}s`)).join(''),
+    moves: (() => {
+      const hics = [0.5, 1.5, 2.4, 3.7], rb = [[0, 'none']], eye = [[0, 'none']], mouth = [[0, 'none']];
+      for (const h of hics) {
+        rb.push([h, 'none'], [h + 0.07, 'translateY(-26px) scale(.96,1.06)'], [h + 0.2, 'translateY(3px) scale(1.03,.97)'], [h + 0.32, 'none']);
+        eye.push([h, 'none'], [h + 0.06, 'scale(1.14)'], [h + 0.26, 'none']);
+        mouth.push([h, 'none'], [h + 0.06, 'scale(.6,1.6)'], [h + 0.26, 'none']);
+      }
+      return { rb, eye, mouth };
+    })(),
+    css: `.sk-hic{width:38px;height:38px;border-radius:50%;border:4px solid var(--eye);box-sizing:border-box;opacity:0;animation:sk-hic .7s ease-out both}
+@keyframes sk-hic{0%{opacity:0;transform:scale(.3)}20%{opacity:1;transform:translateY(-22px)}100%{opacity:0;transform:translate(10px,-56px) scale(1.5)}}`,
+  },
+  // Startled: it watches a bubble float up, the bubble pops in its face, and it leaps. Then a nervous sweat and a blush.
+  startle: {
+    ms: 3800, eye: 'round', mouth: 'small', flip: true,
+    beats: [[520, { mouth: 'o' }], [1700, { mouth: 'wiggle' }], [2550, { eye: 'happy', mouth: 'small' }]],
+    back: () => scPiece('sc-bubble', 'left:790px;top:290px') + scPiece('sc-pop', 'left:794px;top:178px', SC_ART.pop),
+    front: () => scBang(0.64),
+    kit: () => scShock(0.64) + scSweat(1.7) + scBlush(2.6),
+    moves: {
+      eyes: [[0, 'none'], [0.3, `translate(${skSide('46px')},14px)`], [0.6, `translate(${skSide('42px')},4px)`], [0.7, 'translateY(-8px)'], [1.4, 'none']],
+      eye: [[0, 'none'], [0.62, 'none'], [0.68, 'scale(1.28)'], [1.4, 'scale(1.2)'], [1.8, 'none']],
+      rb: [[0, 'none'], [0.6, 'none'], [0.68, 'translateY(-54px) scale(1.08)'], [0.9, 'translateY(-40px) scale(1.06)'], [1.1, 'translateY(4px) scale(1.02,.97)'], [1.25, 'none'], [1.35, 'translateX(-3px)'], [1.45, 'translateX(3px)'], [1.55, 'translateX(-3px)'], [1.65, 'translateX(3px)'], [1.75, 'none']],
+    },
+    css: `.sc-bubble{width:96px;height:96px;border-radius:50%;border:5px solid var(--ink);box-sizing:border-box;box-shadow:inset 14px -14px 0 -8px rgba(255,255,255,.35);animation:sc-bubble 3.8s ease-out both}
+.sc-pop{width:120px;height:120px;color:var(--ink);opacity:0;animation:sc-pop 3.8s ease-out both}
+${scKeys('sc-bubble', 3.8, [[0, 'opacity:0;transform:translateY(120px) scale(.6)'], [0.15, 'opacity:.9;transform:translateY(80px) scale(.8)'], [0.6, 'opacity:.9;transform:translate(-14px,-80px)'], [0.64, 'opacity:.6;transform:translate(-14px,-84px) scale(1.25)'], [0.7, 'opacity:0;transform:translate(-14px,-84px) scale(1.4)']])}
+${scKeys('sc-pop', 3.8, [[0, 'opacity:0;transform:scale(.4)'], [0.62, 'opacity:0;transform:scale(.4)'], [0.66, 'opacity:1;transform:scale(.8)'], [0.95, 'opacity:0;transform:scale(1.3)']])}`,
+  },
+  // Nodding off: its eyes droop, its head sinks, a sleep bubble grows and shrinks... pop! It jolts awake and
+  // looks round to see if anyone noticed.
+  nodoff: {
+    ms: 5600, eye: 'round', mouth: 'small', flip: true,
+    beats: [[400, { eye: 'half' }], [1700, { eye: 'closed' }], [3420, { eye: 'round', mouth: 'o' }], [4950, { eye: 'happy', mouth: 'small' }]],
+    kit: () => scPiece('sk-snooze', 'left:470px;top:300px') + scMany(2, (i) => scPiece('sk-z', `left:${[560, 610][i]}px;top:${[150, 110][i]}px;animation-delay:${[2, 2.5][i]}s`, SC_ART.z)),
+    moves: {
+      rb: [[0, 'none'], [0.5, 'none'], [1.6, `translateY(18px) rotate(${skSide('3deg')})`], [1.75, `translateY(10px) rotate(${skSide('2deg')})`], [2.6, `translateY(26px) rotate(${skSide('4deg')}) scale(.98)`], [3.4, `translateY(30px) rotate(${skSide('5deg')}) scale(.98)`], [3.5, 'translateY(-28px) scale(1.05)'], [3.7, 'translateY(4px)'], [3.85, 'none']],
+      eye: [[0, 'none'], [3.5, 'none'], [3.56, 'scale(1.18)'], [3.9, 'none']],
+      eyes: [[0, 'none'], [3.9, 'none'], [4.1, `translateX(${skSide('-54px')})`], [4.4, `translateX(${skSide('-54px')})`], [4.6, `translateX(${skSide('54px')})`], [4.9, `translateX(${skSide('54px')})`], [5.1, 'none']],
+    },
+    css: `.sk-snooze{width:92px;height:92px;margin-top:-92px;border-radius:50%;border:4px solid var(--eye);box-sizing:border-box;background:rgba(255,255,255,.22);transform-origin:0 100%;opacity:0;animation:sk-snooze 5.6s ease-in-out both}
+.sk-z{width:60px;height:60px;color:var(--eye);opacity:0;animation:sk-z 1.4s ease-out both}
+${scKeys('sk-snooze', 5.6, [[0, 'opacity:0;transform:scale(.2)'], [1.8, 'opacity:0;transform:scale(.2)'], [2, 'opacity:.9;transform:scale(.4)'], [2.4, 'opacity:.9;transform:none'], [2.8, 'opacity:.9;transform:scale(.6)'], [3.2, 'opacity:.9;transform:scale(1.15)'], [3.42, 'opacity:.9;transform:scale(1.25)'], [3.5, 'opacity:0;transform:scale(1.7)']])}
+@keyframes sk-z{0%{opacity:0;transform:scale(.4)}25%{opacity:.9}100%{opacity:0;transform:translate(30px,-90px) scale(1.1)}}`,
+  },
+  // Peekaboo: it hides off the edge of the screen, peeks back in with one eye, has a look round, ducks out, and pops back.
+  peek: {
+    ms: 5400, eye: 'round', mouth: 'small', flip: true,
+    beats: [[1300, { mouth: 'o' }], [3800, { eye: 'happy', mouth: 'grin' }], [4900, { eye: 'round', mouth: 'smile' }]],
+    moves: {
+      rb: [[0, 'none'], [0.2, `translateX(${skSide('-30px')})`], [0.75, `translateX(${skSide('780px')})`], [1.4, `translateX(${skSide('780px')}) rotate(${skSide('-14deg')})`], [1.9, `translateX(${skSide('575px')}) rotate(${skSide('-14deg')})`], [3.2, `translateX(${skSide('575px')}) rotate(${skSide('-14deg')})`], [3.45, `translateX(${skSide('780px')}) rotate(${skSide('-14deg')})`], [3.7, `translateX(${skSide('780px')})`], [4.15, `translateX(${skSide('-40px')})`], [4.35, `translateX(${skSide('14px')})`], [4.5, 'none']],
+      eyes: [[0, 'none'], [1.9, 'none'], [2.2, `translateX(${skSide('-40px')})`], [2.6, `translate(${skSide('-40px')},-24px)`], [2.9, `translate(${skSide('-50px')},10px)`], [3.2, 'none']],
+      eye: [[0, 'none'], [2.7, 'none'], [2.76, 'scaleY(.08)'], [2.86, 'none']],
+    },
+    css: '',
+  },
+  // A fly buzzes about. Its eyes chase it, it lands on top of one eye and gets blinked off, then the robot snaps at it,
+  // misses, glares after it, and shrugs.
+  flychase: {
+    ms: 6600, eye: 'round', mouth: 'small', flip: true,
+    beats: [[2500, { mouth: 'flat' }], [4200, { mouth: 'o' }], [4480, { mouth: 'flat' }], [5000, { eye: 'angry', mouth: 'frown' }], [5900, { eye: 'happy', mouth: 'small' }]],
+    front: () => scPiece('sc-fly', '', `<b>${SC_ART.fly}</b>`),
+    moves: {
+      eyes: [[0, 'none'], [0.3, 'translate(-60px,-14px)'], [0.5, 'translate(-47px,-24px)'], [0.8, 'translate(-30px,-9px)'], [1.1, 'translate(-42px,3px)'], [1.5, 'translate(-10px,-19px)'], [1.8, 'translate(13px,-6px)'], [2.1, 'translate(37px,-21px)'], [2.4, 'translate(14px,-22px)'], [3.55, 'translate(14px,-22px)'], [3.8, 'translate(13px,-37px)'], [4.1, 'translate(-10px,-9px)'], [4.35, 'translateY(16px)'], [4.55, 'translateY(20px)'], [4.8, 'translate(-25px,30px)'], [5.2, 'translate(-60px,11px)'], [5.6, 'translate(-70px,20px)'], [5.9, 'translate(-70px,20px)'], [6.3, 'none']],
+      eyeL: [[0, 'none'], [2.4, 'none'], [2.6, 'translate(26px,-12px)'], [3.5, 'translate(26px,-12px)'], [3.7, 'none']],
+      eyeR: [[0, 'none'], [2.4, 'none'], [2.6, 'translateY(8px) scaleY(.6)'], [3.5, 'translateY(8px) scaleY(.6)'], [3.54, 'scaleY(.08)'], [3.66, 'none']],
+      rb: [[0, 'none'], [4.45, 'none'], [4.55, 'translateY(22px) scale(1.04,.94)'], [4.7, 'translateY(-4px)'], [4.85, 'none'], [5.9, 'none'], [6.05, 'translateY(-10px)'], [6.25, 'none']],
+    },
+    css: `.sc-fly{left:0;top:0;width:46px;height:36px;animation:sc-fly 6.6s ease-in-out both}
+.sc-fly b{display:block;width:100%;height:100%;animation:sc-buzz .07s linear infinite alternate}
+@keyframes sc-buzz{from{transform:translate(-2px,1px)}to{transform:translate(2px,-2px)}}
+${scKeys('sc-fly', 6.6, [[0, 'translate(-60px,128px)'], [0.5, 'translate(182px,78px)'], [0.8, 'translate(282px,168px)'], [1.1, 'translate(212px,238px)'], [1.5, 'translate(402px,108px)'], [1.8, 'translate(542px,188px)'], [2.1, 'translate(682px,98px)'], [2.4, 'translate(632px,52px)'], [3.55, 'translate(632px,52px)'], [3.8, 'translate(542px,-2px)'], [4.1, 'translate(402px,168px)'], [4.35, 'translate(452px,318px)'], [4.5, 'translate(462px,336px)'], [4.8, 'translate(312px,408px)'], [5.2, 'translate(102px,288px)'], [5.6, 'translate(-80px,368px)']])}`,
+  },
+};
+// Turn each skit's movements into CSS: ".shell[data-skit=car] .rb{animation:...}" plus its keyframes.
+// A moment that plays a skit: its length and starting look come from the skit.
+const skit = (name, extra) => ({ ms: SKITS[name].ms, eye: SKITS[name].eye, mouth: SKITS[name].mouth, skit: name, ...extra });
+const SC_PARTS = { rb: '.rb', eyes: '.eyes', eye: '.eye', eyeL: '.eye.l', eyeR: '.eye.r', mouth: '.mouth' };
+const SKIT_STYLE = `.shell{--dir:1}.shell[data-flip]{--dir:-1}
+.skit{position:absolute;left:-480px;top:-235px;width:960px;height:470px;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .4s}
+.skit.on{opacity:1}
+.shell[data-flip] .skit{transform:scaleX(-1)}
+.kit{position:absolute;left:0;top:0;width:800px;height:470px;pointer-events:none;opacity:0;transition:opacity .3s}
+.kit.on{opacity:1}
+[data-robot=buddy] .kit{display:none}
+.eye-kit{position:absolute;inset:0;pointer-events:none}
+[data-eye=squeeze] .eye g.squeeze{display:block}
+.eye.r g.squeeze{transform:scaleX(-1);transform-origin:50px 60px}
+.skit i,.kit i,.eye-kit i,.skit b{position:absolute;display:block}
+.skit svg,.kit svg,.eye-kit svg{display:block;width:100%;height:100%;overflow:visible}
+.sk-bang{width:44px;height:110px;color:var(--eye);opacity:0;animation:sk-bang .9s ease-out both}
+.sk-shock{width:800px;height:470px;color:var(--eye);opacity:0;animation:sk-shock .6s ease-out both}
+.sk-blush{width:96px;height:40px;border-radius:50%;background:#ff7a9c;opacity:0;animation:sk-blush 1.2s ease-in-out both}
+@keyframes sk-bang{0%{opacity:0;transform:translateY(20px) scale(.3)}20%{opacity:1;transform:scale(1.25)}35%{transform:none}75%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
+@keyframes sk-shock{0%{opacity:0;transform:scale(.9)}25%{opacity:.9}100%{opacity:0;transform:scale(1.08)}}
+@keyframes sk-blush{0%{opacity:0}35%,75%{opacity:.6}100%{opacity:0}}
+${Object.entries(SKITS).map(([name, s]) => {
+    const secs = (s.ms / 1000).toFixed(1);
+    return Object.entries(s.moves || {}).map(([part, how]) => {
+      const sel = `.shell[data-skit=${name}] ${SC_PARTS[part]}`;
+      if (typeof how === 'string') return `${sel}{animation:${how}}`;
+      return `${sel}{animation:sc-${name}-${part} ${secs}s ease-in-out both}\n${scKeys(`sc-${name}-${part}`, s.ms / 1000, how)}`;
+    }).join('\n') + '\n' + (s.css || '');
+  }).join('\n')}`;
 // Idle moments: something small happens every now and then. "ms" is how long it lasts.
 const MOMENTS = {
   // real information, shown in its eyes
@@ -187,12 +615,12 @@ const MOMENTS = {
   giggle:   { ms: 2600, eye: 'happy', mouth: 'grin', anim: 'giggle' },
   heart:    { ms: 2800, eye: 'heart', mouth: 'smile', props: ['heart', 'heart'], anim: 'hop' },
   daydream: { ms: 5000, eye: 'round', mouth: 'small', props: ['star', 'heart', 'star'] },
-  sneeze:   { ms: 2400, eye: 'half', mouth: 'small', anim: 'sneeze' },
-  peek:     { ms: 4200, eye: 'round', mouth: 'smile' },
-  fly:      { ms: 7000, eye: 'round', mouth: 'o', fx: 'fly' },
+  sneeze:   skit('sneeze'),
+  peek:     skit('peek'),
+  fly:      skit('butterfly'),
   star:     { ms: 3000, eye: 'round', mouth: 'o', fx: 'shooting' },
   spin:     { ms: 2000, eye: 'happy', mouth: 'grin', anim: 'spin' },
-  nod:      { ms: 4400, eye: 'half', mouth: 'small', anim: 'nod' },
+  nod:      skit('nodoff'),
 };
 // While music plays it mostly just listens, with a different small move now and then. These keep the album colours.
 Object.assign(MOMENTS, {
@@ -219,20 +647,21 @@ const sweep = (icon, colour, size = 96) => ({ kind: 'sweep', icon, colour, n: 1,
 const rings = (colour) => ({ kind: 'rings', colour, n: 3 });
 const REACTIONS = [
   ['lyricStorm', { eye: 'round', mouth: 'o', look: 'up', fx: 'storm', tint: '#1b1140', words: 'storm stormy thunder hurricane tornado typhoon tempest' }],
-  ['lyricBolt', { eye: 'star', mouth: 'o', anim: 'shiver', fx: fall('bolt', '#ffe14d', 8, 64), tint: '#fff06a', words: 'lightning electric electricity shock voltage spark sparks thunderbolt' }],
+  ['lyricBolt', { ...skit('zap'), words: 'lightning electric electricity shock voltage spark sparks thunderbolt' }],
   ['lyricHeartbreak', { eye: 'half', mouth: 'frown', anim: 'nod', fx: fall('heart', '#6d7c9e', 9, 40), tint: '#26324f', words: 'heartbreak heartbroken heartache breakup broken betray betrayal cheated cheating' }],
   ['lyricFire', { eye: 'star', mouth: 'o', fx: 'embers', anim: 'giggle', tint: '#ff5a1f', words: 'fire flame burn blaze inferno ember ash ashes smoke smoking lava volcano wildfire ignite matches gasoline' }],
   ['lyricHell', { eye: 'angry', mouth: 'grin', fx: rise('bolt', '#ff4d3a', 10, 34), tint: '#a80f0f', words: 'devil hell demon demons satan sinner sin wicked evil' }],
   ['lyricHeaven', { eye: 'happy', mouth: 'smile', look: 'up', fx: twinkle('sparkle', '#fff4b8', 14, 34), tint: '#fff4cc', words: 'heaven angel angels halo holy pray prayer praying amen god lord church miracle blessed soul' }],
-  ['lyricGhost', { eye: 'odd', mouth: 'o', anim: 'shiver', fx: drift('ghost', '#f0f4ff', 5, 72), tint: '#10152e', words: 'ghost ghosts haunt haunted spirit spooky graveyard grave cemetery zombie vampire witch monster monsters' }],
+  ['lyricGhost', { ...skit('ghost', { tint: '#10152e' }), words: 'ghost ghosts haunt haunted spirit spooky graveyard grave cemetery zombie vampire witch monster monsters' }],
   ['lyricDeath', { eye: 'x', mouth: 'flat', anim: 'nod', fx: drift('ghost', '#b9c2d8', 3, 64), tint: '#0a0a12', words: 'death dead die dying funeral coffin dyin kill killer murder bleed bleeding blood' }],
   ['lyricAngry', { eye: 'angry', mouth: 'frown', anim: 'shake', fx: burst('bolt', '#ff5a3c', 9, 38), tint: '#b3121d', words: 'angry anger rage furious mad hate hated fight fighting war battle enemy enemies revenge punch bullet bullets gun guns' }],
   ['lyricScream', { eye: 'round', mouth: 'grin', anim: 'shake', fx: burst('bang', '#ffffff', 8, 52), words: 'scream screaming shout shouting yell yelling loud louder roar howl' }],
   ['lyricFear', { eye: 'odd', mouth: 'wiggle', anim: 'shiver', tint: '#20153a', fx: twinkle('bang', '#ffffff', 5, 40), words: 'scared afraid fear frightened terrified panic nightmare nightmares trembling shaking danger dangerous' }],
   ['lyricCrazy', { eye: 'spiral', mouth: 'wiggle', anim: 'spin', fx: burst('star', '#ffd34d', 10, 34), words: 'crazy insane madness dizzy spinning spin wild psycho lunatic drunk hypnotized' }],
   ['lyricSad', { eye: 'half', mouth: 'frown', anim: 'nod', fx: fall('drop', '#8ec5ff', 8, 28), tint: '#1e2a4a', words: 'cry tear sad sadness lonely alone goodbye sorrow grief weep weeping pain hurt hurting sorry regret miss missing empty misery depressed lost' }],
-  ['lyricRain', { eye: 'round', mouth: 'flat', look: 'up', fx: 'rain', tint: '#16314f', words: 'rain rainy raindrop drizzle downpour umbrella puddle monsoon wet soaked' }],
-  ['lyricSnow', { eye: 'happy', mouth: 'o', look: 'up', fx: fall('flake', '#ffffff', 13, 34), tint: '#bcdcff', words: 'snow snowflake snowman winter frozen freeze freezing ice icy frost blizzard cold chill shiver december christmas xmas sleigh santa' }],
+  ['lyricRain', { ...skit('umbrella', { tint: '#16314f', endings: RAIN_ENDINGS }), words: 'rain rainy raindrop drizzle downpour umbrella puddle monsoon wet soaked' }],
+  ['lyricSnow', { eye: 'happy', mouth: 'o', look: 'up', fx: fall('flake', '#ffffff', 13, 34), tint: '#bcdcff', words: 'snow snowflake snowman winter december christmas xmas sleigh santa' }],
+  ['lyricCold', { ...skit('cold', { tint: '#bcdcff' }), words: 'cold chill freeze freezing frozen ice icy frost blizzard shiver' }],
   ['lyricOcean', { eye: 'round', mouth: 'smile', fx: rise('bubble', '#bfe9ff', 13, 40), tint: '#0a6ea8', words: 'ocean sea wave tide water river lake drown drowning swim swimming sail sailing boat ship shore beach island sailor mermaid deep underwater' }],
   ['lyricFish', { eye: 'round', mouth: 'o', fx: sweep('fish', '#ffb15c', 110), tint: '#0a6ea8', words: 'fish fishing shark whale dolphin' }],
   ['lyricGold', { eye: 'coin', mouth: 'grin', fx: twinkle('sparkle', '#ffd34d', 15, 34), tint: '#a97400', words: 'gold golden diamond diamonds jewel jewels silver pearl pearls ruby crystal treasure shiny glitter glitters sparkle sparkling' }],
@@ -245,17 +674,17 @@ const REACTIONS = [
   ['lyricBeat', { eye: 'round', mouth: 'grin', anim: 'pulse', fx: rings('#ffffff'), words: 'beat beats drum drums bass heartbeat pulse pounding bang boom' }],
   ['lyricSun', { eye: 'happy', mouth: 'grin', fx: 'sun', anim: 'sway', tint: '#ffb300', words: 'sun sunny sunshine summer sunlight sunrise sunset dawn daylight tan heatwave' }],
   ['lyricRainbow', { eye: 'star', mouth: 'grin', fx: rise('rainbow', '#ffffff', 5, 110), tint: '#ff5fa2', words: 'rainbow rainbows colour colours color colors unicorn' }],
-  ['lyricHot', { eye: 'half', mouth: 'o', anim: 'wobble', tint: '#ff4b1f', fx: rise('drop', '#ffd9b8', 7, 26), words: 'hot heat sweat sweating sweaty boiling desert steam' }],
+  ['lyricHot', { ...skit('hot', { tint: '#ff4b1f' }), words: 'hot heat sweat sweating sweaty boiling desert steam' }],
   ['lyricStars', { eye: 'star', mouth: 'smile', look: 'up', fx: twinkle('star', '#ffffff', 16, 26), tint: '#0a0f3c', words: 'star starlight galaxy universe cosmic constellation heavens' }],
   ['lyricMoon', { eye: 'round', mouth: 'small', look: 'up', props: ['moon'], fx: 'night', tint: '#0a0f3c', words: 'moon moonlight midnight night tonight lunar werewolf' }],
   ['lyricSpace', { eye: 'round', mouth: 'o', fx: sweep('rocket', '#ffffff', 120), tint: '#050a2e', words: 'rocket space astronaut planet planets mars saturn orbit alien aliens spaceship' }],
   ['lyricShooting', { ms: 2400, eye: 'round', mouth: 'o', fx: 'shooting', words: 'wish wishes wishing comet meteor shooting' }],
   ['lyricWind', { eye: 'half', mouth: 'wiggle', fx: 'wind', anim: 'tilt', words: 'wind windy breeze blow blowing gust whisper whispers' }],
-  ['lyricFly', { ms: 7000, eye: 'round', mouth: 'o', fx: 'fly', words: 'butterfly butterflies wing flutter' }],
+  ['lyricFly', { ...skit('butterfly'), words: 'butterfly butterflies wing flutter' }],
   ['lyricBirds', { eye: 'happy', mouth: 'small', look: 'up', fx: drift('bird', '#ffffff', 7, 54), words: 'bird fly flying flew sparrow eagle dove crow feather feathers free freedom sky skies cloud clouds' }],
   ['lyricPlane', { eye: 'round', mouth: 'smile', fx: sweep('plane', '#ffffff', 110), words: 'plane airplane jet airport pilot flight' }],
-  ['lyricCar', { eye: 'round', mouth: 'grin', fx: sweep('car', '#ff6a45', 120), anim: 'bounce', words: 'car cars drive driving driver highway road roads motorway cadillac engine truck speed racing race freeway ride riding' }],
-  ['lyricTrain', { eye: 'round', mouth: 'small', fx: sweep('car', '#ffffff', 100), words: 'train trains railway station bus taxi journey travel travelling' }],
+  ['lyricCar', { ...skit('car'), words: 'car cars drive driving driver highway road roads motorway cadillac engine truck speed racing race freeway ride riding' }],
+  ['lyricTrain', { ...skit('train'), words: 'train trains railway station bus taxi journey travel travelling' }],
   ['lyricSpring', { eye: 'happy', mouth: 'smile', fx: fall('flower', '#ff9ecb', 12, 36), tint: '#58a94a', words: 'flower flowers rose roses spring garden petal petals daisy lily tulip bloom blossom sunflower' }],
   ['lyricAutumn', { eye: 'round', mouth: 'small', fx: fall('leaf', '#e88a2c', 12, 38), tint: '#7a3d0a', words: 'autumn leaf leaves october september harvest' }],
   ['lyricForest', { eye: 'round', mouth: 'smile', fx: twinkle('tree', '#3ea76a', 10, 60), tint: '#134b2a', words: 'tree trees forest woods jungle mountain mountains valley hill nature wilderness' }],
@@ -309,16 +738,16 @@ const IDLES = [
   ['idlePlane', { bg: '#2a6f97', ms: 3400, eye: 'round', mouth: 'o', track: true, fx: sweep('plane', '#ffffff', 110) }],
   ['idleRocket', { bg: '#1b1f5e', ms: 3400, eye: 'star', mouth: 'o', track: true, fx: sweep('rocket', '#ffffff', 120) }],
   ['idleFish', { bg: '#0a7a8c', ms: 3400, eye: 'round', mouth: 'small', track: true, fx: sweep('fish', '#ffb15c', 110) }],
-  ['idleCar', { bg: '#8a3b12', ms: 3400, eye: 'round', mouth: 'grin', track: true, anim: 'bounce', fx: sweep('car', '#ffd34d', 120) }],
+  ['idleCar', { bg: '#8a3b12', ...skit('car') }],
   ['idleBirds', { bg: '#38709c', ms: 5000, eye: 'happy', mouth: 'small', look: 'drift', fx: drift('bird', '#ffffff', 7, 54) }],
   ['idleSea', { bg: '#0a5f8a', ms: 5000, eye: 'round', mouth: 'smile', anim: 'sway', fx: drift('wave', '#bfe9ff', 6, 70) }],
-  ['idleGhost', { bg: '#241a45', ms: 4600, eye: 'odd', mouth: 'wiggle', anim: 'shiver', fx: drift('ghost', '#f0f4ff', 4, 72) }],
+  ['idleGhost', { bg: '#241a45', ...skit('ghost') }],
   // weather and seasons
   ['idleSnow', { bg: '#3a6ea5', ms: 4600, eye: 'happy', mouth: 'o', look: 'up', fx: fall('flake', '#ffffff', 13, 34) }],
   ['idleLeaves', { bg: '#8a4b16', ms: 4600, eye: 'round', mouth: 'small', anim: 'sway', fx: fall('leaf', '#f0a33c', 12, 38) }],
   ['idlePetals', { bg: '#a8447a', ms: 4600, eye: 'happy', mouth: 'smile', fx: fall('flower', '#ffd1e6', 12, 34) }],
-  ['idleCold', { bg: '#2b6b9e', ms: 3400, eye: 'odd', mouth: 'wiggle', anim: 'shiver', fx: fall('flake', '#ffffff', 8, 30) }],
-  ['idleHot', { bg: '#b8481f', ms: 3800, eye: 'half', mouth: 'o', anim: 'wobble', fx: rise('drop', '#ffd9b8', 7, 26) }],
+  ['idleCold', { bg: '#2b6b9e', ...skit('cold') }],
+  ['idleHot', { bg: '#b8481f', ...skit('hot') }],
   ['idleRainbow', { bg: '#5b2a9d', ms: 4400, eye: 'star', mouth: 'grin', fx: rise('rainbow', '#ffffff', 5, 110) }],
   ['idleForest', { bg: '#14532d', ms: 4400, eye: 'happy', mouth: 'small', fx: twinkle('tree', '#4ec27f', 10, 60) }],
   ['idleStarry', { bg: '#0b1040', ms: 4800, eye: 'star', mouth: 'smile', look: 'up', fx: twinkle('star', '#ffffff', 16, 26) }],
@@ -355,6 +784,12 @@ const IDLES = [
   ['idlePuff', { bg: '#bd3a58', ms: 2800, eye: 'round', mouth: 'o', anim: 'puff' }],
   ['idleSidestep', { bg: '#2f6f4f', ms: 3000, eye: 'happy', mouth: 'smile', anim: 'sidestep' }],
   ['idleFloat', { bg: '#1f4f8f', ms: 4800, eye: 'closed', mouth: 'small', anim: 'floaty', props: ['z'] }],
+  // little stories
+  ['idleTrain', { bg: '#3d5a80', ...skit('train') }],
+  ['idleRain', { bg: '#35627f', ...skit('umbrella', { endings: RAIN_ENDINGS }) }],
+  ['idleHiccup', { bg: '#2e7d6b', ...skit('hiccup') }],
+  ['idleStartle', { bg: '#9c3d6e', ...skit('startle') }],
+  ['idleFlyChase', { bg: '#5a6e1e', ...skit('flychase') }],
 ];
 for (const [name, { bg, track, ...look }] of IDLES) MOMENTS[name] = look;
 const IDLE_STYLE = IDLES.map(([name, { bg, track }]) => `[data-moment=${name}]{--bg:${bg};--eye:#fff;--glow:#fff}${track ? `[data-moment=${name}] .eyes{animation:track-sweep 2.8s ease-in-out both}` : ''}`).join('\n');
@@ -970,7 +1405,7 @@ button:disabled{opacity:.35;cursor:default}
 svg{display:block;width:100%;height:100%}
 
 /* ---------- palette: the whole screen changes colour with the mood, so it reads across a room ---------- */
-.shell{--bg:var(--rest,#0d1120);--ink:#fff;--eye:#74e6dc;--glow:#74e6dc;--prop:#fff;
+.shell{--bg:var(--rest,#0d1120);--ink:#fff;--eye:var(--bop-eye,#74e6dc);--glow:var(--bop-eye,#74e6dc);--prop:#fff;
   position:relative;overflow:hidden;width:100%;height:100vh;background:var(--bg);color:var(--ink);
   user-select:none;-webkit-user-select:none;touch-action:manipulation}
 [data-mood=groove]{--bg:#141a38;--eye:#8fb4ff;--glow:#8fb4ff}
@@ -1199,8 +1634,8 @@ svg{display:block;width:100%;height:100%}
 
 /* ---------- movement. Only transform and opacity animate, which the Echo's GPU can do on its own. ---------- */
 .rb{animation:breathe 4.6s ease-in-out infinite}
-[data-eye=round] .eye,[data-eye=odd] .eye{animation:blink 6.3s infinite}
-[data-eye=round] .eye.r,[data-eye=odd] .eye.r{animation-delay:.05s}
+[data-eye=round] .eye,[data-eye=odd] .eye,[data-eye=tall] .eye,[data-eye=dots] .eye{animation:blink 6.3s infinite}
+[data-eye=round] .eye.r,[data-eye=odd] .eye.r,[data-eye=tall] .eye.r,[data-eye=dots] .eye.r{animation-delay:.05s}
 [data-anim=lean] .rb{animation:lean .9s ease-in-out infinite alternate}
 [data-mood=listening] .eye{animation:none;transform:scale(1.1)}
 [data-anim=ponder] .eyes{animation:ponder 2.2s ease-in-out infinite}
@@ -1485,13 +1920,15 @@ svg{display:block;width:100%;height:100%}
 .lights[data-n=many],.lights[data-n=scroll]{grid-template-rows:repeat(2,minmax(0,1fr))}
 .lights[data-n=scroll]{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:calc((100% - 36px) / 4.3);overflow-x:auto;overflow-y:hidden;
   scroll-snap-type:x mandatory;scrollbar-width:none;touch-action:pan-x;overscroll-behavior:contain}
+/* Split: the buttons share the screen with the heating card, so about two across, the next peeking in. */
+.menu[data-layout=split] .lights[data-n=scroll]{grid-auto-columns:calc((100% - 12px) / 2.2)}
 .lights[data-n=scroll]::-webkit-scrollbar{display:none}
 .lights[data-n=scroll] .tile{scroll-snap-align:start}
 .lights[data-n=many] .tile,.lights[data-n=scroll] .tile{flex-direction:row;align-items:center;justify-content:flex-start;gap:14px;padding:12px 18px;border-radius:22px}
 .lights[data-n=many] .ic,.lights[data-n=scroll] .ic{width:40px;height:40px;flex-shrink:0}
 /* Still readable across a room: nothing under 24px. */
 .lights[data-n=many] .nm,.lights[data-n=scroll] .nm{font-size:26px}
-.lights[data-n=many] .st,.lights[data-n=scroll] .st{font-size:24px}
+.lights[data-n=many] .st,.lights[data-n=scroll] .st{font-size:24px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .tx{min-width:0;max-width:100%}
 .tile .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile{border-radius:26px;background:#1d2238;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;padding:18px 20px;text-align:left;min-height:0;transition:background-color .15s,color .15s}
@@ -1759,8 +2196,203 @@ svg{display:block;width:100%;height:100%}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
 `;
 
+// ---- Bops: characters a screen can pick, or make. A Bop is a face only: a colour, eyes, a mouth and extras, plus a
+// personality (how it talks back; the echo_robot add-on adds it to the assistant's instructions) and a voice.
+// Its eyes and mouth take the place of the plain round eyes and the plain smile everywhere. Anything special a moment
+// shows (hearts, stars, a big grin, the talking mouth) stays the moment's, so every reaction still reads.
+const BOP_EYE_PATHS = {
+  round: '<rect class="fill" x="8" y="4" width="84" height="112" rx="40"/>',
+  tall: '<rect class="fill" x="25" y="-6" width="50" height="132" rx="25"/>',
+  dots: '<circle class="fill" cx="50" cy="64" r="25"/>',
+  happy: '<path class="line" d="M12 82Q50-6 88 82"/>',
+  sleepy: '<path class="fill" d="M6 56H94A44 44 0 0 1 6 56Z"/>',
+  closed: '<path class="line" d="M12 50Q50 96 88 50"/>',
+  star: '<path class="fill" d="M50 4 63 42 100 44 71 68 82 108 50 85 18 108 29 68 0 44 37 42Z"/>',
+};
+const BOP_MOUTH_PATHS = {
+  smile: '<path class="stroke" d="M30 16Q90 90 150 16"/>',
+  grin: '<path class="solid" d="M24 8H156Q150 78 90 78 30 78 24 8Z"/>',
+  small: '<path class="stroke" d="M64 28Q90 52 116 28"/>',
+  o: '<ellipse class="solid" cx="90" cy="40" rx="26" ry="36"/>',
+  flat: '<path class="stroke" d="M52 40H128"/>',
+  cat: '<path class="stroke" d="M38 24Q50 66 90 36Q130 66 142 24"/>',
+};
+const BOP_EYES = Object.keys(BOP_EYE_PATHS), BOP_MOUTHS = Object.keys(BOP_MOUTH_PATHS), BOP_EXTRAS = ['brows', 'blush', 'freckles', 'glasses'];
+const BOP_WORDS = { round: 'Round', tall: 'Tall', dots: 'Dots', happy: 'Happy', sleepy: 'Sleepy', closed: 'Closed', star: 'Star', smile: 'Smile', grin: 'Grin', small: 'Small', o: 'Ooh', flat: 'Flat', cat: 'Cat', brows: 'Eyebrows', blush: 'Blush', freckles: 'Freckles', glasses: 'Glasses' };
+const BOP_MOODS = [['cheerful', 'Cheerful', 'Warm and upbeat'], ['bubbly', 'Bubbly', 'Excitable, chatty'], ['grumpy', 'Grumpy', 'Dry, mutters'], ['posh', 'Posh', 'Terribly polite'], ['sleepy', 'Sleepy', 'Slow and dozy'], ['cheeky', 'Cheeky', 'Teases a bit']];
+// The voices the voice connector offers (voice-bridge/echo_voice_bridge.py VOICES), as picked from samples.
+const BOP_VOICES = [['bm_fable', 'Fable', 'British man'], ['bm_lewis', 'Lewis', 'British man'], ['af_sarah', 'Sarah', 'US woman'], ['af_sky', 'Sky', 'US woman'], ['am_echo', 'Echo', 'US man'], ['am_onyx', 'Onyx', 'US man'], ['am_santa', 'Santa', 'US man']];
+const BOP_COLOURS = [['#3b3fb8', 'Blue'], ['#1b2f5e', 'Navy'], ['#3a2a7a', 'Purple'], ['#c2407a', 'Pink'], ['#7a1f2b', 'Maroon'], ['#c45a12', 'Orange'], ['#8a6a00', 'Mustard'], ['#0f6e56', 'Green'], ['#1f7a8c', 'Teal'], ['#0d1120', 'Night']];
+const BOP_PRESETS = [
+  { id: 'beep', name: 'Beep', bg: '#3b3fb8', eye: 'round', mouth: 'smile', extras: [], mood: 'cheerful', voice: 'bm_fable' },
+  { id: 'bop', name: 'Bop', bg: '#c2407a', eye: 'happy', mouth: 'grin', extras: ['blush'], mood: 'bubbly', voice: 'af_sky' },
+  { id: 'grumbles', name: 'Grumbles', bg: '#7a1f2b', eye: 'sleepy', mouth: 'flat', extras: ['brows'], mood: 'grumpy', voice: 'am_onyx' },
+  { id: 'sirbleep', name: 'Sir Bleep', bg: '#1b2f5e', eye: 'dots', mouth: 'small', extras: ['glasses', 'brows'], mood: 'posh', voice: 'bm_lewis' },
+  { id: 'dozy', name: 'Dozy', bg: '#3a2a7a', eye: 'closed', mouth: 'o', extras: [], mood: 'sleepy', voice: 'af_sarah' },
+  { id: 'sparky', name: 'Sparky', bg: '#c45a12', eye: 'star', mouth: 'cat', extras: ['freckles'], mood: 'cheeky', voice: 'am_echo' },
+];
+const BOP_DEFAULT = 'beep', BOP_NAME_MAX = 16, BOP_MAX = 40, BOP_LOCAL_KEY = 'echo-robot-bops';
+const BOP_NEW_NAMES = ['Blip', 'Zippy', 'Pip', 'Widget', 'Nova', 'Boop', 'Chip', 'Ziggy', 'Bleepo', 'Sprocket'];
+const BOP_ICON = { pencil: svg('<path d="M4 20h4L19 9l-4-4L4 16v4ZM13 7l4 4"/>'), plus: svg('<path d="M12 5v14M5 12h14"/>') };
+const BOP_EXTRA_PICS = {
+  brows: '<svg viewBox="0 0 120 40" aria-hidden="true"><rect x="4" y="12" width="44" height="12" rx="6" fill="currentColor" transform="rotate(-8 26 18)"/><rect x="72" y="12" width="44" height="12" rx="6" fill="currentColor" transform="rotate(8 94 18)"/></svg>',
+  blush: '<svg viewBox="0 0 120 40" aria-hidden="true"><ellipse cx="26" cy="20" rx="22" ry="11" fill="#ff8fbc"/><ellipse cx="94" cy="20" rx="22" ry="11" fill="#ff8fbc"/></svg>',
+  freckles: '<svg viewBox="0 0 120 40" aria-hidden="true"><g fill="#e8a06a"><circle cx="14" cy="14" r="5"/><circle cx="26" cy="26" r="5"/><circle cx="38" cy="15" r="5"/><circle cx="82" cy="15" r="5"/><circle cx="94" cy="26" r="5"/><circle cx="106" cy="14" r="5"/></g></svg>',
+  glasses: '<svg viewBox="0 0 120 40" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="6"><circle cx="30" cy="22" r="16"/><circle cx="90" cy="22" r="16"/><path d="M46 20q14-8 28 0"/></g></svg>',
+};
+const BOP_LINES = { cheerful: 'Morning! Lovely day for it. Whatever “it” is.', bubbly: 'Ooh, is that a new song? Turn it up, turn it UP!', grumpy: 'It’s raining. Of course it’s raining.', posh: 'Splendid. Shall I dim the lights for you, old bean?', sleepy: 'Mm… five more minutes… zzz', cheeky: 'Bet I can guess your next song. Nope. Wrong. Again?' };
+// Music moments each personality picks from, and the idle moments it does more or less of. Cheerful does everything.
+const BOP_MUSIC = {
+  bubbly: ['vibeHop', 'vibeStars', 'vibeHeart', 'vibeDance', 'vibeBop', 'vibeWink'],
+  grumpy: ['vibeTilt', 'vibeGlance', 'vibeDrowsy', 'vibeSway'],
+  posh: ['vibeHum', 'vibeSway', 'vibeGlance', 'vibeTilt'],
+  sleepy: ['vibeDrowsy', 'yawn', 'vibeSway', 'vibeHum'],
+  cheeky: ['vibeWink', 'vibeTilt', 'vibeStars', 'vibeGlance', 'vibeBop'],
+};
+const BOP_PLAY_MORE = { bubbly: ['spin', 'giggle', 'heart'], posh: ['hum', 'daydream'], sleepy: ['yawn', 'nod', 'daydream'], cheeky: ['wink', 'peek', 'giggle'] };
+const BOP_PLAY_LESS = { grumpy: ['giggle', 'heart', 'spin', 'wink'], posh: ['spin'], sleepy: ['spin'] };
+// Eyebrows: how high they sit for each eye shape (face units), and how each personality holds them: [turn, up] left and right.
+const BOP_BROW_Y = { round: -44, tall: -62, dots: 28, happy: 20, sleepy: 54, closed: 52, star: -40, heart: -14, half: 56, x: 10, squeeze: 14, angry: 22, coin: -48, spiral: -10 };
+const BOP_BROW = { cheerful: [[-5, -8], [5, -8]], bubbly: [[-7, -14], [7, -14]], grumpy: [[16, 10], [-16, 10]], posh: [[-5, -10], [5, 2]], sleepy: [[-9, 8], [9, 8]], cheeky: [[8, 6], [-12, -20]] };
+const bopAwake = (eye) => (eye === 'closed' ? 'sleepy' : eye); // shut eyes open a little when something's going on
+// A Bop as saved, checked: anything odd is put right rather than trusted (the list comes from Home Assistant or this screen).
+function cleanBop(b) {
+  if (!b || typeof b !== 'object' || typeof b.id !== 'string' || !/^[a-z0-9_-]{1,40}$/.test(b.id)) return null;
+  const name = String(b.name || '').replace(/\s+/g, ' ').trim().slice(0, BOP_NAME_MAX);
+  if (!name) return null;
+  return {
+    id: b.id, name,
+    bg: /^#[0-9a-f]{6}$/i.test(b.bg || '') ? b.bg.toLowerCase() : BOP_PRESETS[0].bg,
+    eye: BOP_EYES.includes(b.eye) ? b.eye : 'round',
+    mouth: BOP_MOUTHS.includes(b.mouth) ? b.mouth : 'smile',
+    extras: BOP_EXTRAS.filter((x) => Array.isArray(b.extras) && b.extras.includes(x)),
+    mood: BOP_MOODS.some(([m]) => m === b.mood) ? b.mood : 'cheerful',
+    voice: typeof b.voice === 'string' && /^[\w.-]{1,40}$/.test(b.voice) ? b.voice : BOP_PRESETS[0].voice,
+  };
+}
+// The extras, in face units (600×350): glasses and eyebrows go with the eyes, blush and freckles on the cheeks.
+// "still" draws the eyebrows in place (for the small faces); on the live face, CSS places them, so they can move.
+function bopKit(b, still) {
+  const has = (x) => b.extras.includes(x);
+  let eyes = '', cheeks = '';
+  if (has('glasses')) eyes += '<g class="bop-glass"><circle cx="130" cy="122" r="116"/><circle cx="470" cy="122" r="116"/><path class="bop-glass-line" d="M246 110Q300 82 354 110M14 100-34 82M586 100 634 82"/></g>';
+  if (has('brows')) {
+    const y = has('glasses') ? -22 : (BOP_BROW_Y[b.eye] ?? -44);
+    const hold = BOP_BROW[b.mood] || BOP_BROW.cheerful;
+    const brow = (side, x, [turn, up]) => `<rect class="brow ${side}" x="${x}" y="0" width="124" height="24" rx="12"${still ? ` style="transform:translateY(${up}px) rotate(${turn}deg)"` : ''}/>`;
+    eyes += `<g class="brows"${still ? ` style="transform:translateY(${y}px)"` : ''}>${brow('l', 68, hold[0])}${brow('r', 408, hold[1])}</g>`;
+  }
+  if (has('blush')) cheeks += '<g class="bop-blush"><ellipse cx="92" cy="278" rx="56" ry="25"/><ellipse cx="508" cy="278" rx="56" ry="25"/></g>';
+  if (has('freckles')) cheeks += `<g class="bop-freckles">${[[66, 262], [92, 284], [118, 264], [534, 262], [508, 284], [482, 264]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="7.5"/>`).join('')}</g>`;
+  return { eyes, cheeks };
+}
+// A small still face, for the Bops page and the maker. scale is of the 600×350 face.
+function bopFace(b, scale) {
+  const kit = bopKit(b, true), eye = BOP_EYE_PATHS[b.eye];
+  return `<span class="bf" style="width:${Math.round(600 * scale)}px;height:${Math.round(350 * scale)}px"><span class="bf-in" style="transform:scale(${scale})">`
+    + `<svg class="bf-eye l" viewBox="0 0 100 120">${eye}</svg><svg class="bf-eye r" viewBox="0 0 100 120">${eye}</svg>`
+    + `<svg class="bf-kit" viewBox="0 0 600 350">${kit.eyes}${kit.cheeks}</svg><svg class="bf-mouth" viewBox="0 0 180 80">${BOP_MOUTH_PATHS[b.mouth]}</svg></span></span>`;
+}
+const BOP_STYLE = `
+/* ---------- Bops: on the face ---------- */
+[data-eye=tall] .eye g.tall,[data-eye=dots] .eye g.dots,[data-eye=sleepy] .eye g.sleepy,[data-mouth=cat] .mouth .cat{display:block}
+.shell[data-beye]:not([data-beye=round])[data-eye=odd] .eye g.round,.shell[data-beye]:not([data-beye=round])[data-eye=wink] .eye.l g.round{display:none}
+${['tall', 'dots', 'happy', 'sleepy', 'star'].map((s) => `.shell[data-beye=${s}][data-eye=odd] .eye g.${s},.shell[data-beye=${s}][data-eye=wink] .eye.l g.${s}{display:block}`).join('\n')}
+.bop-eyes,.bop-cheeks{position:absolute;left:0;top:0;width:600px;height:350px;overflow:visible;pointer-events:none;display:none;color:var(--eye);transition:opacity .13s,color .3s}
+[data-robot=face][data-bop] .bop-eyes,[data-robot=face][data-bop] .bop-cheeks{display:block}
+[data-eye=none] .bop-eyes{opacity:0}
+.bop-glass{fill:currentColor;fill-opacity:.1;stroke:currentColor;stroke-width:13;stroke-linecap:round}
+.bop-glass .bop-glass-line{fill:none}
+.brows{transition:transform .25s}
+.brow{fill:currentColor;transform-box:fill-box;transform-origin:center;transform:translateY(calc(var(--y,0px) + var(--up,0px))) rotate(var(--r,0deg));transition:transform .35s}
+.bop-blush{fill:#ff8fbc;opacity:.62}
+.bop-freckles{fill:#ffd9b6}
+${Object.entries(BOP_BROW_Y).map(([e, y]) => `.shell[data-eye=${e}] .bop-eyes .brows{transform:translateY(${y}px)}`).join('')}
+${['odd', 'wink'].map((e) => ['tall', 'dots', 'happy', 'sleepy', 'star'].map((s) => `.shell[data-eye=${e}][data-beye=${s}] .bop-eyes .brows{transform:translateY(${BOP_BROW_Y[s]}px)}`).join('')).join('')}
+.shell[data-bop][data-robot] .bop-eyes.glasses .brows{transform:translateY(-22px)}
+${Object.entries(BOP_BROW).map(([m, [[lt, lu], [rt, ru]]]) => `.shell[data-bop=${m}] .bop-eyes .brow.l{--r:${lt}deg;--y:${lu}px}.shell[data-bop=${m}] .bop-eyes .brow.r{--r:${rt}deg;--y:${ru}px}`).join('')}
+.shell[data-mood=listening] .bop-eyes .brow{--up:-14px}
+.shell[data-mood=thinking] .bop-eyes .brow.r{--up:-22px;--r:-6deg}
+.shell:is([data-mood=alarm],[data-mood=remind],[data-mood=wakeup]) .bop-eyes .brow{--up:-30px}
+.shell[data-eye=heart] .bop-eyes .brow{--up:-14px}
+.shell[data-mood=confused] .bop-eyes .brow.l{--r:12deg}.shell[data-mood=confused] .bop-eyes .brow.r{--r:-14deg;--up:-16px}
+.shell[data-eye=angry] .bop-eyes .brow.l{--r:18deg}.shell[data-eye=angry] .bop-eyes .brow.r{--r:-18deg}
+/* Its colour replaces the plain background while resting with music on, too (not over album colours or a moment). */
+.shell[data-robot=face][data-bop][data-mood=groove]:not([data-art=on]):is([data-moment=""],:not([data-moment])){--bg:var(--rest);--eye:#fff;--glow:#fff;--prop:#fff}
+/* the small still faces */
+.bf{position:relative;display:block;flex-shrink:0;color:#fff;pointer-events:none}
+.bf-in{position:absolute;left:0;top:0;width:600px;height:350px;transform-origin:0 0}
+.bf-eye{position:absolute;top:0;width:200px;height:240px;overflow:visible}
+.bf-eye.l{left:30px}.bf-eye.r{left:370px}
+.bf-mouth{position:absolute;left:210px;top:262px;width:180px;height:80px;overflow:visible}
+.bf-kit{position:absolute;left:0;top:0;width:600px;height:350px;overflow:visible}
+.bf .fill,.bf .solid{fill:currentColor}
+.bf .line{fill:none;stroke:currentColor;stroke-width:21;stroke-linecap:round;stroke-linejoin:round}
+.bf .stroke{fill:none;stroke:currentColor;stroke-width:18;stroke-linecap:round;stroke-linejoin:round}
+/* ---------- Bops: the Settings row, the Bops page and the maker ---------- */
+.set-link.bop-link{justify-content:flex-start;gap:16px;padding-left:12px}
+.bop-link .bop-dot{width:88px;height:56px;border-radius:16px;flex-shrink:0;position:relative;overflow:hidden}
+.bop-link .bop-dot .bf{position:absolute;left:14px;top:10px}
+.bop-link .bop-label{flex:1;text-align:left}
+.bops,.bopm{position:absolute;inset:0;background:#0d1120;padding:12px 14px 0;display:flex;flex-direction:column;gap:10px;opacity:0;visibility:hidden;transform:translateX(30px);transition:opacity .18s,transform .18s,visibility 0s .18s}
+.bops-open .bops,.bopm-open .bopm{opacity:1;visibility:visible;transform:none;transition:opacity .18s,transform .18s}
+.bops .set-head h2{flex:1}
+.bops-now{font-size:24px;color:#aab2c8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+.bops-grid{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-content:start;padding:2px 2px 14px}
+.bop-tile{position:relative;height:166px;border-radius:22px;background:#1d2238;overflow:hidden}
+.bop-use{position:absolute;inset:0;display:flex;flex-direction:column;text-align:left}
+.bop-thumb{position:relative;height:112px;width:100%;flex-shrink:0;overflow:hidden}
+.bop-thumb .bf{position:absolute;left:50%;top:20px;margin-left:-78px}
+.bop-tname{flex:1;width:100%;display:flex;align-items:center;padding:0 64px 0 16px;font-size:26px;font-weight:700;min-width:0}
+.bop-tname span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bop-tile[aria-current=true]{outline:5px solid #fff;outline-offset:-5px}
+.bop-tile[aria-current=true] .bop-tname{background:#fff;color:#0d1120}
+.bop-edit{position:absolute;right:8px;bottom:5px;width:44px;height:44px;border-radius:50%;background:rgba(120,130,170,.26);display:grid;place-items:center}
+.bop-tile[aria-current=true] .bop-edit{background:#dfe3ef;color:#0d1120}
+.bop-edit span,.bop-new span.ic{width:24px;height:24px;pointer-events:none}
+.bop-new{height:166px;border-radius:22px;box-shadow:inset 0 0 0 4px #39405f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-size:26px;font-weight:700}
+.bop-new span.ic{width:44px;height:44px}
+.bopm-head{flex-shrink:0;display:flex;align-items:center;gap:12px;height:72px}
+.bopm-name{flex:1;min-width:0;height:64px;border-radius:20px;background:#1d2238;display:flex;align-items:center;gap:10px;padding:0 18px}
+.bopm-name span{width:30px;height:30px;opacity:.7;flex-shrink:0}
+.bopm-name input{flex:1;min-width:0;width:100%;border:0;background:transparent;color:#fff;font:inherit;font-size:32px;font-weight:700;padding:0;outline:none}
+.bop-pill{height:64px;border-radius:22px;padding:0 24px;font-size:26px;font-weight:700;background:#1d2238;flex-shrink:0;white-space:nowrap}
+.bop-pill.main{background:#fff;color:#0d1120}
+.bop-pill.warn{background:#e5484d}
+.bop-pill[hidden]{display:none}
+.bopm-body{flex:1;min-height:0;display:flex;gap:12px;padding-bottom:14px}
+.bopm-prev{width:336px;flex-shrink:0;border-radius:24px;position:relative;overflow:hidden;transition:background-color .35s}
+.bopm-prev .bf{position:absolute;left:24px;top:40px;animation:breathe 4.6s ease-in-out infinite}
+.bopm-say{position:absolute;left:14px;right:14px;bottom:14px;background:#fff;color:#1d1a3a;font-size:24px;line-height:1.25;padding:12px 16px;border-radius:20px 20px 20px 6px}
+.short .bopm-say{display:none}
+.bopm-tabs{width:196px;flex-shrink:0;display:flex;flex-direction:column;gap:6px}
+.bopm-tab{flex:1;max-height:64px;border-radius:18px;color:#cfd5e6;font-size:26px;font-weight:600;text-align:left;padding:0 18px}
+.bopm-tab[aria-selected=true]{background:#fff;color:#0d1120}
+.bopm-panel{flex:1;min-width:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;display:grid;gap:10px;align-content:start;grid-template-columns:repeat(3,minmax(0,1fr))}
+.bopm-panel[data-tab=colour]{grid-template-columns:repeat(5,minmax(0,1fr));padding:10px}
+.bopm-panel[data-tab=extras],.bopm-panel[data-tab=mood]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.bopm-panel[data-tab=voice]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.bop-sw{width:64px;height:64px;border-radius:50%;justify-self:center}
+.bop-sw[data-v="#0d1120"]{box-shadow:inset 0 0 0 3px #39405f}
+.bop-sw[aria-pressed=true]{box-shadow:0 0 0 4px #0d1120,0 0 0 8px #fff}
+.bop-opt{height:104px;border-radius:20px;background:#1d2238;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:24px;font-weight:600;padding:6px}
+.bop-opt svg{height:44px;width:auto;overflow:visible;pointer-events:none}
+.bop-opt .fill,.bop-opt .solid{fill:currentColor}
+.bop-opt .line{fill:none;stroke:currentColor;stroke-width:21;stroke-linecap:round;stroke-linejoin:round}
+.bop-opt .stroke{fill:none;stroke:currentColor;stroke-width:18;stroke-linecap:round;stroke-linejoin:round}
+.bop-opt[aria-pressed=true]{background:#fff;color:#0d1120}
+.bop-opt.wide{align-items:flex-start;padding:0 20px;gap:2px}
+.bop-opt.wide small{font-size:24px;font-weight:400;opacity:.7}
+.bop-voice{height:80px;border-radius:20px;background:#1d2238;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:0 16px;font-size:26px;font-weight:700;text-align:left}
+.bop-voice small{font-size:24px;font-weight:400;opacity:.7;white-space:nowrap}
+.bop-voice[aria-pressed=true]{background:#fff;color:#0d1120}
+.bopm-note{grid-column:1/-1;margin:0;font-size:24px;line-height:1.25;color:#aab2c8}
+.bopm-note:empty{display:none}
+`;
+
 const EYE_SVG = `<svg viewBox="0 0 100 120">
   <g class="round"><rect class="fill" x="8" y="4" width="84" height="112" rx="40"/></g>
+  <g class="tall">${BOP_EYE_PATHS.tall}</g><g class="dots">${BOP_EYE_PATHS.dots}</g><g class="sleepy">${BOP_EYE_PATHS.sleepy}</g>
   <g class="happy"><path class="line" d="M12 82Q50-6 88 82"/></g>
   <g class="closed"><path class="line" d="M12 50Q50 96 88 50"/></g>
   <g class="heart"><path class="fill" d="M50 112C6 76 0 46 12 26 26 6 46 14 50 36 54 14 74 6 88 26 100 46 94 76 50 112Z"/></g>
@@ -1770,6 +2402,7 @@ const EYE_SVG = `<svg viewBox="0 0 100 120">
   <g class="coin"><circle class="fill" cx="50" cy="60" r="44"/></g>
   <g class="angry"><path class="fill" d="M6 34 94 62V90A36 28 0 0 1 22 90Z"/></g>
   <g class="spiral"><path class="line" style="stroke-width:12" d="M50 60c6-6 14 0 10 8-6 10-24 6-24-10 0-18 26-24 38-8 12 18-2 44-26 42C26 90 12 68 22 44"/></g>
+  <g class="squeeze"><path class="line" d="M24 30 80 60 24 90"/></g>
 </svg>`;
 
 class EchoHomeCard extends HTMLElement {
@@ -1815,10 +2448,11 @@ class EchoHomeCard extends HTMLElement {
       window.removeEventListener('resize', this._onResize);
     }
     this._stopAlerts();
+    this._stopBops();
     this._stopForecast();
     if (this._talk) this._talkFinish(this._talk, 0);
     clearInterval(this._timer);
-    [this._alertT, this._lingerT, this._wordsT, this._controlsT, this._pollT, this._holdT, this._demoT, this._glanceT, this._toastT, this._momentT, this._radioSyncT, this._doorT, this._vacMapT, this._vacWatchT, this._nextT, this._swapT, this._fxT, this._lyricSwapT].forEach(clearTimeout);
+    [this._alertT, this._lingerT, this._wordsT, this._controlsT, this._pollT, this._holdT, this._demoT, this._glanceT, this._toastT, this._momentT, this._radioSyncT, this._doorT, this._vacMapT, this._vacWatchT, this._nextT, this._swapT, this._fxT, this._lyricSwapT, this._skitT, ...(this._beatT || [])].forEach(clearTimeout);
     clearInterval(this._lyricTimer);
     this._lyricTimer = null;
     this._swapT = null;
@@ -1832,11 +2466,11 @@ class EchoHomeCard extends HTMLElement {
     if (this._built) return;
     this._built = true;
     const q = (s) => this.shadowRoot.querySelector(s);
-    this.shadowRoot.innerHTML = `<style>${STYLE}${IDLE_STYLE}</style>
+    this.shadowRoot.innerHTML = `<style>${STYLE}${IDLE_STYLE}${SKIT_STYLE}${BOP_STYLE}</style>
     <div class="shell" data-robot="${this._config.robot}" data-mood="idle" data-eye="round" data-mouth="smile" role="application" aria-label="Robot. Tap for controls.">
       <div class="wash"></div>
       <div class="rings"><i></i><i></i><i></i></div>
-      <div class="stage"><div class="blend"><div class="rb">
+      <div class="stage"><div class="skit skit-back"></div><div class="blend"><div class="rb">
         <div class="shadow"></div>
         <div class="body">
           <div class="neck"></div>
@@ -1847,7 +2481,7 @@ class EchoHomeCard extends HTMLElement {
         <div class="head">
           <div class="antenna"></div><div class="ear l"></div><div class="ear r"></div>
           <div class="visor"><div class="face">
-            <div class="eyes-blend"><div class="eyes"><div class="eye l">${EYE_SVG}</div><div class="eye r">${EYE_SVG}</div></div></div>
+            <div class="eyes-blend"><div class="eyes"><div class="eye l">${EYE_SVG}<div class="eye-kit"></div></div><div class="eye r">${EYE_SVG}<div class="eye-kit"></div></div><svg class="bop-eyes" viewBox="0 0 600 350" aria-hidden="true"></svg></div></div><svg class="bop-cheeks" viewBox="0 0 600 350" aria-hidden="true"></svg>
             <div class="readout"><span class="ro l"></span><span class="ro c"></span><span class="ro r"></span></div>
             <div class="mouth">
               <svg class="smile" viewBox="0 0 180 80"><path class="stroke" d="M30 16Q90 90 150 16"/></svg>
@@ -1857,12 +2491,14 @@ class EchoHomeCard extends HTMLElement {
               <svg class="grin" viewBox="0 0 180 80"><path class="solid" d="M24 8H156Q150 78 90 78 30 78 24 8Z"/></svg>
               <svg class="frown" viewBox="0 0 180 80"><path class="stroke" d="M44 62Q90 18 136 62"/></svg>
               <svg class="wiggle" viewBox="0 0 180 80"><path class="stroke" d="M22 44Q44 8 66 44T110 44 158 40"/></svg>
+              <svg class="cat" viewBox="0 0 180 80">${BOP_MOUTH_PATHS.cat}</svg>
               <div class="bars"><i></i><i></i><i></i><i></i><i></i></div>
             </div>
           </div></div>
+          <div class="kit"></div>
         </div>
         <div class="props"><div class="p p1"></div><div class="p p2"></div><div class="p p3"></div></div>
-      </div></div></div>
+      </div></div><div class="skit skit-front"></div></div>
       <div class="wash-colour"></div>
       <div class="fx"></div>
       <div class="time corner"></div>
@@ -1946,6 +2582,7 @@ class EchoHomeCard extends HTMLElement {
         <div class="settings" role="dialog" aria-label="Settings" aria-hidden="true">
           <div class="set-head"><button class="round set-back" aria-label="Back"><span>${ICON.back}</span></button><h2>Settings</h2></div>
           <div class="set-body">
+            <button class="set-link bop-link" aria-label="Choose this screen’s Bop"><span class="bop-dot"></span><span class="bop-label"></span><span aria-hidden="true">›</span></button>
             <label class="set-row"><span class="set-name">Brightness</span><input class="set-range" data-bright="brightness" type="range" min="10" max="100" aria-label="Brightness"><span class="set-val"></span></label>
             <label class="set-row"><span class="set-name">At night</span><input class="set-range" data-bright="night_brightness" type="range" min="10" max="100" aria-label="Brightness at night"><span class="set-val"></span></label>
             <label class="set-row"><span class="set-name">Room light</span><select class="set-select" data-choice="dark_sensor" aria-label="Room light sensor"></select></label>
@@ -1979,6 +2616,20 @@ class EchoHomeCard extends HTMLElement {
             <div class="cust-items"></div>
           </div>
         </div>
+        <div class="bops" role="dialog" aria-label="Bops" aria-hidden="true">
+          <div class="set-head"><button class="round bops-back" aria-label="Back"><span>${ICON.back}</span></button><h2>Bops</h2><span class="bops-now"></span></div>
+          <div class="bops-grid"></div>
+        </div>
+        <div class="bopm" role="dialog" aria-label="Bop maker" aria-hidden="true">
+          <div class="bopm-head"><button class="round bopm-back" aria-label="Back"><span>${ICON.back}</span></button>
+            <label class="bopm-name"><span>${BOP_ICON.pencil}</span><input class="bopm-input" maxlength="${BOP_NAME_MAX}" aria-label="Name" autocomplete="off" spellcheck="false"></label>
+            <button class="bop-pill bopm-copy">Copy</button><button class="bop-pill bopm-del">Delete</button><button class="bop-pill main bopm-save">Save</button></div>
+          <div class="bopm-body">
+            <div class="bopm-prev"><span class="bopm-face"></span><p class="bopm-say"></p></div>
+            <div class="bopm-tabs" role="tablist">${[['colour', 'Colour'], ['eyes', 'Eyes'], ['mouth', 'Mouth'], ['extras', 'Extras'], ['mood', 'Personality'], ['voice', 'Voice']].map(([k, n]) => `<button class="bopm-tab" role="tab" data-tab="${k}">${n}</button>`).join('')}</div>
+            <div class="bopm-panel" role="tabpanel"></div>
+          </div>
+        </div>
       </div>
       <div class="alerts" aria-live="polite"></div>
       <div class="door" role="dialog" aria-label="Doorbell" aria-hidden="true">
@@ -1993,7 +2644,7 @@ class EchoHomeCard extends HTMLElement {
       shell: q('.shell'), stage: q('.stage'), time: q('.time'), date: q('.date'), nightClock: q('.nightclock'), ncTime: q('.nc-time'), ncDate: q('.nc-date'), temp: q('.temp'), caption: q('.caption'),
       said: q('.said'), reply: q('.reply'), eyes: q('.eyes'), eyesBlend: q('.eyes-blend'), rb: q('.rb'), blend: q('.blend'), wash: q('.wash'), dimmer: q('.dimmer'), tint: q('.wash-colour'), npTint: q('.np-tint'), controls: q('.controls'), lights: q('.lights'), menu: q('.menu'), menuStrip: q('.menu-strip'), menuSide: q('.menu-side'),
       mic: q('.micbtn'), toast: q('.toast'), playBtn: q('.bar .main'),
-      props: [q('.p1'), q('.p2'), q('.p3')], fx: q('.fx'), door: q('.door'), doorVideo: q('.door-video'), doorTitle: q('.door-title'), icard: q('.icard'), vwatch: q('.vwatch'), vwLine: q('.vw-line'), vwCanvas: q('.vw-canvas'), lyric: q('.lyric'), lyricText: q('.lyric .cur'), lyricNext: q('.lyric .next'), lyricPrev: q('.lyric .prev'), lyricWasCur: q('.was-cur'), lyricWasNext: q('.was-next'), np: q('.np'), npImg: q('.np-art img'), npArtIcon: q('.np-art span'), npTitle: q('.np-title'), npArtist: q('.np-artist'), npNow: q('.np-now'), npEnd: q('.np-end'), npBar: q('.np-bar'), npFill: q('.np-fill'), npDot: q('.np-dot'), lyricNow: q('.adjust .now'), lyricVal: q('.adjust .val'),
+      props: [q('.p1'), q('.p2'), q('.p3')], fx: q('.fx'), skit: { back: q('.skit-back'), front: q('.skit-front'), kit: q('.kit'), eyes: [...this.shadowRoot.querySelectorAll('.eye-kit')] }, door: q('.door'), doorVideo: q('.door-video'), doorTitle: q('.door-title'), icard: q('.icard'), vwatch: q('.vwatch'), vwLine: q('.vw-line'), vwCanvas: q('.vw-canvas'), lyric: q('.lyric'), lyricText: q('.lyric .cur'), lyricNext: q('.lyric .next'), lyricPrev: q('.lyric .prev'), lyricWasCur: q('.was-cur'), lyricWasNext: q('.was-next'), np: q('.np'), npImg: q('.np-art img'), npArtIcon: q('.np-art span'), npTitle: q('.np-title'), npArtist: q('.np-artist'), npNow: q('.np-now'), npEnd: q('.np-end'), npBar: q('.np-bar'), npFill: q('.np-fill'), npDot: q('.np-dot'), lyricNow: q('.adjust .now'), lyricVal: q('.adjust .val'),
       ro: { l: q('.ro.l'), c: q('.ro.c'), r: q('.ro.r') },
       alerts: q('.alerts'), talkBtn: q('.talkbtn'),
     };
@@ -2034,6 +2685,7 @@ class EchoHomeCard extends HTMLElement {
     this._wireVac(q);
     this._wireLight(q);
     this._wireCust(q);
+    this._wireBops(q);
     this._wireSeek();
     [this._el.np, this._el.controls].forEach((panel) => {
       panel.addEventListener('click', (e) => e.stopPropagation());
@@ -2166,6 +2818,8 @@ class EchoHomeCard extends HTMLElement {
     this._muted = this._state(this._config.mute)?.state === 'on';
     this._ringing = this._state(this._config.timer_ringing)?.state === 'on';
     this._watchAlerts();
+    this._watchBops();
+    this._applyBop();
     this._watchForecast();
     this._watchHome();
     this._watchDoorbell();
@@ -2253,6 +2907,7 @@ class EchoHomeCard extends HTMLElement {
   }
   // Shapes can't morph, so they do what a blink does: close, change while closed, and open.
   _setFace(next) {
+    next = this._bopFace(next);
     this._nextFace = next;
     const shell = this._el.shell;
     const same = shell.dataset.eye === next.eye && shell.dataset.mouth === next.mouth && (shell.dataset.readout || '') === next.readout && next.props.join() === this._propsKey;
@@ -2570,6 +3225,9 @@ class EchoHomeCard extends HTMLElement {
           .map(([at, started]) => [at - this._clockGap.gap, started - this._clockGap.gap]);
         // A listen that says the lyrics are well out, waiting to be confirmed: nothing shown until it is (or isn't).
         radio.unsure = !!(r.pending && Number.isFinite(r.pending.started) && Math.abs(r.pending.started - r.started) > RADIO_UNSURE_MS);
+        // A song timed only by the station's clock that listening has never checked: its lyrics may be for another
+        // version, so they wait for this play's first listen to agree (or put them right). Checked songs show at once.
+        radio.unchecked = r.how === 'station' && r.confirmed === false;
         // The station's number for the track, and the timing you set for it before (unless you've just tapped).
         if (typeof r.track === 'string' && /^[\w-]{1,40}$/.test(r.track) && !radio.track) radio.track = r.track;
         if (radio.track && !radio.adjustTapped && Number.isFinite(r.adjust)) radio.adjust = r.adjust;
@@ -2599,7 +3257,7 @@ class EchoHomeCard extends HTMLElement {
   // out in a different direction. Averaging the reports cancels that, and a big change means you skipped or seeked.
   _songPosition(attrs) {
     if (this._radio) {
-      if (!this._radio.synced || this._radio.unsure) return null;
+      if (!this._radio.synced || this._radio.unsure || this._radio.unchecked) return null;
       const off = Number(this._config.radio_lyrics_offset || 0) + this._lyricAdjust(), now = Date.now();
       // A known radio-edit cut: from the moment the Echo plays it, the timing after the cut.
       let since = this._radio.since;
@@ -2873,7 +3531,7 @@ class EchoHomeCard extends HTMLElement {
   _autoMoment() {
     if (!this._canMoment()) return;
     if (this._mood() === 'groove') {
-      if (this._config.moments !== false) this._playMoment(this._pick(MUSIC_MOMENTS));
+      if (this._config.moments !== false) this._playMoment(this._pick(this._bopMoments(MUSIC_MOMENTS, 'music')));
       return;
     }
     if (this._cardDue() && this._showCard()) return;
@@ -2886,7 +3544,7 @@ class EchoHomeCard extends HTMLElement {
     // Take turns: something of its own, then something useful.
     this._turn = !this._turn;
     const info = INFO_MOMENTS.filter((n) => n === 'clock' || n === 'date' || this._usable(this._config.weather));
-    this._playMoment(this._pick(this._turn ? PLAY_MOMENTS : info));
+    this._playMoment(this._pick(this._turn ? this._bopMoments(PLAY_MOMENTS, 'play') : info));
   }
   // ---- info cards: the forecast and what's coming up ----
   // Home Assistant already fetches the forecast for its weather entity, so nothing new leaves the house.
@@ -3422,6 +4080,7 @@ class EchoHomeCard extends HTMLElement {
     clearTimeout(this._momentT);
     this._momentT = setTimeout(() => this._endMoment(true), base.ms);
     this._apply();
+    if (base.skit) this._startSkit(moment);
     return true;
   }
   _clearTint() {
@@ -3430,6 +4089,7 @@ class EchoHomeCard extends HTMLElement {
   _endMoment(apply) {
     clearTimeout(this._momentT);
     if (!this._moment) return;
+    this._stopSkit();
     this._moment = null;
     this._el.shell.classList.remove('has-card');
     this._clearTint();
@@ -3439,6 +4099,49 @@ class EchoHomeCard extends HTMLElement {
     clearTimeout(this._fxT);
     this._fxT = setTimeout(() => fx.replaceChildren(), FX_FADE_MS);
     if (apply) this._apply();
+  }
+  // Skits: fill the layers, start the movements, and change expression on each beat. Skits that can happen from
+  // either side take turns. Word-by-word lyrics already keep the screen busy, so they use fewer pieces alongside them.
+  _startSkit(moment) {
+    // A story with more than one ending plays them in turn.
+    const look = moment.look, shell = this._el.shell, layer = this._el.skit;
+    if (look.endings) this._endingTurn = ((this._endingTurn ?? -1) + 1) % look.endings.length;
+    const name = look.endings ? look.endings[this._endingTurn] : look.skit, s = SKITS[name];
+    if (!s) return;
+    clearTimeout(this._skitT);
+    const few = (n) => this._fewer(n);
+    layer.back.innerHTML = s.back ? s.back(few) : '';
+    layer.front.innerHTML = s.front ? s.front(few) : '';
+    layer.kit.innerHTML = s.kit ? s.kit(few) : '';
+    for (const eye of layer.eyes) eye.innerHTML = s.eyeKit ? s.eyeKit(few) : '';
+    this._blend(this._el.blend, this._el.rb); // start from wherever its breathing had got to
+    delete shell.dataset.skit;
+    void shell.offsetWidth; // so the same skit twice in a row starts again from the beginning
+    this._skitSides = this._skitSides || {}; // each either-side skit swaps from wherever it played last time
+    const flip = s.flip ? (this._skitSides[name] = !this._skitSides[name]) : false;
+    if (flip) shell.dataset.flip = ''; else delete shell.dataset.flip;
+    shell.dataset.skit = name;
+    for (const el of [layer.back, layer.front, layer.kit]) el.classList.add('on');
+    shell.classList.add('fx-busy');
+    this._beatT = (s.beats || []).map(([at, change]) => setTimeout(() => {
+      if (this._moment !== moment) return;
+      moment.look = { ...moment.look, ...change };
+      this._apply();
+    }, at));
+  }
+  _stopSkit() {
+    (this._beatT || []).forEach(clearTimeout);
+    this._beatT = [];
+    const shell = this._el.shell, layer = this._el.skit;
+    if (!shell.dataset.skit) return;
+    // If it's cut short (you start talking), ease back from wherever it had got to rather than jumping.
+    this._blend(this._el.blend, this._el.rb);
+    this._blend(this._el.eyesBlend, this._el.eyes);
+    delete shell.dataset.skit;
+    delete shell.dataset.flip;
+    for (const el of [layer.back, layer.front, layer.kit]) el.classList.remove('on');
+    clearTimeout(this._skitT);
+    this._skitT = setTimeout(() => { for (const el of [layer.back, layer.front, layer.kit, ...layer.eyes]) el.replaceChildren(); }, FX_FADE_MS);
   }
   // Builds any of the reusable effects: falling, rising, drifting, twinkling, bursting, sweeping or rings.
   // Word-by-word lyrics already keep the screen busy, so effects use fewer pieces alongside them.
@@ -3509,10 +4212,14 @@ class EchoHomeCard extends HTMLElement {
 
   // ---- the words you said: read from Home Assistant's own record of the last voice run ----
   async _pipelineId() {
-    if (this._pipeline) return this._pipeline;
+    // The assistant this Echo uses: its own "Assistant" choice if it has one (a Bop's voice can change it), else the preferred one.
+    const select = this._bopAssistantSelect(), chosen = (select && this._state(select)?.state) || '';
+    if (this._pipeline && this._pipelineFor === chosen) return this._pipeline;
     try {
       const r = await this._hass.callWS({ type: 'assist_pipeline/pipeline/list' });
-      this._pipeline = r.preferred_pipeline || (r.pipelines && r.pipelines[0] && r.pipelines[0].id);
+      const named = chosen && chosen !== 'preferred' && (r.pipelines || []).find((p) => p.name === chosen);
+      this._pipeline = (named && named.id) || r.preferred_pipeline || (r.pipelines && r.pipelines[0] && r.pipelines[0].id);
+      this._pipelineFor = chosen;
     } catch (err) { this._pipeline = this._config.pipeline; }
     return this._pipeline;
   }
@@ -4155,7 +4862,9 @@ class EchoHomeCard extends HTMLElement {
     if (!open && this._el.shell.classList.contains('cust-open')) this._openCust(false);
     if (!open && this._el.shell.classList.contains('light-open')) this._openLight(null);
     if (!open && this._el.shell.classList.contains('vac-open')) this._openVac(null);
-    const page = ['settings-open', 'heat-open', 'cust-open', 'light-open', 'vac-open'].some((c) => this._el.shell.classList.contains(c));
+    if (!open && this._el.shell.classList.contains('bopm-open')) this._openMaker(null);
+    if (!open && this._el.shell.classList.contains('bops-open')) this._openBops(false);
+    const page = ['settings-open', 'heat-open', 'cust-open', 'light-open', 'vac-open', 'bops-open', 'bopm-open'].some((c) => this._el.shell.classList.contains(c));
     if (open) this._controlsT = setTimeout(() => this._openControls(false), page ? SETTINGS_MS : CONTROLS_MS);
   }
 
@@ -4173,6 +4882,7 @@ class EchoHomeCard extends HTMLElement {
     if (['big', 'compact'].includes(this._saved.menu_size)) out.menu_size = this._saved.menu_size;
     // Which light sensor is in this screen's room ('' = none): each screen keeps its own.
     if (typeof this._saved.dark_sensor === 'string') out.dark_sensor = this._saved.dark_sensor || null;
+    if (typeof this._saved.bop === 'string' && /^[a-z0-9_-]{1,40}$/.test(this._saved.bop)) out.bop = this._saved.bop; // this screen's Bop
     if (Array.isArray(this._saved.menu_order)) out.menu_order = this._saved.menu_order.filter((x) => x && typeof x.id === 'string').map((x) => ({ id: x.id, show: x.show !== false }));
     return out;
   }
@@ -5266,6 +5976,377 @@ class EchoHomeCard extends HTMLElement {
     }
     return null;
   }
+  // ---- Bops: this screen's character (see BOP_PRESETS). The list is kept by the echo_robot add-on, so every screen sees
+  // the same Bops (without the add-on, they're kept on this screen only). Which Bop this screen shows is a Settings choice. ----
+  _wireBops(q) {
+    Object.assign(this._el, { bopEyes: q('.bop-eyes'), bopCheeks: q('.bop-cheeks'), bopLink: q('.bop-link'), bops: q('.bops'), bopsGrid: q('.bops-grid'), bopsNow: q('.bops-now'), bopm: q('.bopm'), bopmInput: q('.bopm-input'), bopmPanel: q('.bopm-panel'), bopmPrev: q('.bopm-prev'), bopmFace: q('.bopm-face'), bopmSay: q('.bopm-say'), bopmCopy: q('.bopm-copy'), bopmDel: q('.bopm-del') });
+    this._el.bopLink.addEventListener('click', () => this._openBops(true));
+    q('.bops-back').addEventListener('click', () => this._openBops(false));
+    q('.bopm-back').addEventListener('click', () => this._openMaker(null));
+    this._el.bopsGrid.addEventListener('click', (e) => {
+      const edit = e.target.closest('.bop-edit'), use = e.target.closest('.bop-use');
+      if (edit) this._openMaker(this._bopList().find((b) => b.id === edit.dataset.id) || null);
+      else if (use) this._useBop(use.dataset.id);
+      else if (e.target.closest('.bop-new')) this._openMaker(this._newBop());
+    });
+    q('.bopm-tabs').addEventListener('click', (e) => {
+      const tab = e.target.closest('.bopm-tab');
+      if (tab) { this._bopTab = tab.dataset.tab; this._el.bopmPanel.scrollTop = 0; this._renderMaker(); }
+    });
+    this._el.bopmPanel.addEventListener('click', (e) => { const o = e.target.closest('[data-k]'); if (o) this._bopPick(o.dataset.k, o.dataset.v); });
+    const input = this._el.bopmInput;
+    input.addEventListener('input', () => { if (this._bopDraft) this._bopDraft.name = input.value; this._openControls(true); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+    q('.bopm-save').addEventListener('click', () => this._saveBop());
+    this._el.bopmCopy.addEventListener('click', () => this._copyBop());
+    this._el.bopmDel.addEventListener('click', () => this._deleteBop());
+  }
+  _bopLocal() {
+    if (this._bopLocalList === undefined) {
+      try { const list = JSON.parse(localStorage.getItem(BOP_LOCAL_KEY)); this._bopLocalList = Array.isArray(list) ? list : []; } catch (err) { this._bopLocalList = []; }
+    }
+    return this._bopLocalList;
+  }
+  _bopSaved() { return (this._bopShared ? this._bopShared.bops : this._bopLocal()).map(cleanBop).filter(Boolean); }
+  // Every Bop: the ready-made six (as changed, if they were), then the ones made, in the order they were made.
+  _bopList() {
+    const src = this._bopShared ? this._bopShared.bops : this._bopLocal();
+    if (this._bopListFrom === src) return this._bopListMemo; // worked out again only when the list changes
+    const saved = this._bopSaved(), byId = new Map(saved.map((b) => [b.id, b]));
+    this._bopListFrom = src;
+    this._bopListMemo = [...BOP_PRESETS.map((p) => byId.get(p.id) || p), ...saved.filter((b) => !BOP_PRESETS.some((p) => p.id === b.id))];
+    return this._bopListMemo;
+  }
+  _bopOf(id) { const list = this._bopList(); return list.find((b) => b.id === id) || list.find((b) => b.id === BOP_DEFAULT); }
+  _bopChosen() { return this._bopOf(this._config.bop || BOP_DEFAULT); }
+  // Puts this screen's Bop on the face. Only the face robot wears Bops; the full-body robot keeps its own look.
+  _applyBop() {
+    if (!this._built) return;
+    const shell = this._el.shell, b = this._config.robot === 'face' ? this._bopChosen() : null;
+    const key = b ? JSON.stringify(b) : '';
+    if (key !== this._bopKey) {
+      const before = this._bopKey !== undefined && this._hass ? this._seenColour() : null;
+      this._bopKey = key;
+      this._bopNow = b;
+      if (b) {
+        shell.dataset.bop = b.mood;
+        shell.dataset.beye = bopAwake(b.eye);
+        shell.style.setProperty('--rest', b.bg);
+        shell.style.setProperty('--bop-eye', '#fff');
+      } else {
+        delete shell.dataset.bop;
+        delete shell.dataset.beye;
+        shell.style.removeProperty('--rest');
+        shell.style.removeProperty('--bop-eye');
+      }
+      const kit = b ? bopKit(b) : { eyes: '', cheeks: '' };
+      this._el.bopEyes.innerHTML = kit.eyes;
+      this._el.bopEyes.classList.toggle('glasses', !!b && b.extras.includes('glasses'));
+      this._el.bopCheeks.innerHTML = kit.cheeks;
+      if (this._hass) { this._apply(); if (before) this._wash(before); }
+    }
+    this._renderBopLink();
+    if (this._hass) { this._bopTellServer(); this._bopVoice(); }
+  }
+  // The plain round eyes and the plain smile become the Bop's own. Shut eyes open a little unless it's simply resting.
+  _bopFace(next) {
+    const b = this._bopNow;
+    if (!b) return next;
+    const resting = !this._moment && ['idle', 'groove'].includes(this._el.shell.dataset.mood);
+    const eye = next.eye === 'round' ? (resting ? b.eye : bopAwake(b.eye)) : next.eye;
+    const mouth = next.mouth === 'smile' ? b.mouth : next.mouth;
+    return eye === next.eye && mouth === next.mouth ? next : { ...next, eye, mouth };
+  }
+  // Its personality picks which moments it plays: a sleepy Bop yawns instead of dancing.
+  _bopMoments(list, kind) {
+    const mood = this._bopNow && this._bopNow.mood;
+    if (!mood) return list;
+    if (kind === 'music') return BOP_MUSIC[mood] || list;
+    const less = BOP_PLAY_LESS[mood] || [];
+    return [...list.filter((n) => !less.includes(n)), ...(BOP_PLAY_MORE[mood] || [])];
+  }
+  _renderBopLink() {
+    const b = this._bopChosen(), link = this._el.bopLink;
+    const key = JSON.stringify(b) + this._config.robot;
+    if (!link || key === this._bopLinkKey) return;
+    this._bopLinkKey = key;
+    link.querySelector('.bop-dot').style.background = b.bg;
+    link.querySelector('.bop-dot').innerHTML = bopFace(b, 0.1);
+    this._setText(link.querySelector('.bop-label'), `Bop: ${b.name}${this._config.robot === 'face' ? '' : ' (face robot only)'}`);
+  }
+  _openBops(open) {
+    this._el.shell.classList.toggle('bops-open', open);
+    this._el.bops.setAttribute('aria-hidden', String(!open));
+    if (open) { this._el.bopsGrid.scrollTop = 0; this._renderBops(); }
+    if (this._el.shell.classList.contains('open')) this._openControls(true);
+  }
+  _renderBops() {
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+    const list = this._bopList(), cur = this._bopChosen();
+    this._setText(this._el.bopsNow, `On this screen: ${cur.name}`);
+    const made = list.length - BOP_PRESETS.length;
+    this._el.bopsGrid.innerHTML = list.map((b) => `<div class="bop-tile" aria-current="${b.id === cur.id}"><button class="bop-use" data-id="${b.id}" aria-label="Use ${esc(b.name)} on this screen"><span class="bop-thumb" style="background:${b.bg}">${bopFace(b, 0.26)}</span><span class="bop-tname"><span>${esc(b.name)}</span></span></button><button class="bop-edit" data-id="${b.id}" aria-label="Change ${esc(b.name)}"><span>${BOP_ICON.pencil}</span></button></div>`).join('')
+      + (made < BOP_MAX ? `<button class="bop-new"><span class="ic">${BOP_ICON.plus}</span><span>New Bop</span></button>` : '');
+  }
+  _useBop(id) {
+    this._saveChoice('bop', id);
+    this._config.bop = id;
+    this._applyBop();
+    if (this._el.shell.classList.contains('bops-open')) this._renderBops();
+    this._toast(`${this._bopChosen().name} is on this screen now`);
+    if (this._el.shell.classList.contains('open')) this._openControls(true);
+  }
+  _newBop() {
+    const pick = (list) => list[Math.floor(Math.random() * list.length)];
+    const id = `b${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+    return { id, name: pick(BOP_NEW_NAMES), bg: pick(BOP_COLOURS)[0], eye: pick(BOP_EYES), mouth: pick(BOP_MOUTHS), extras: [], mood: 'cheerful', voice: this._bopChosen().voice, isNew: true };
+  }
+  // The maker: changes are tried out on the preview, and only kept when saved. Back leaves them.
+  _openMaker(bop) {
+    const open = !!bop;
+    this._bopDraft = open ? { ...bop, extras: [...bop.extras] } : null;
+    this._bopDelArmed = false;
+    if (open && !this._bopTab) this._bopTab = 'colour';
+    this._el.shell.classList.toggle('bopm-open', open);
+    this._el.bopm.setAttribute('aria-hidden', String(!open));
+    if (open) { this._el.bopmPanel.scrollTop = 0; this._renderMaker(true); } else this._el.bopmInput.blur();
+    if (this._el.shell.classList.contains('open')) this._openControls(true);
+  }
+  _renderMaker(full) {
+    const d = this._bopDraft, el = this._el, tab = this._bopTab;
+    if (!d) return;
+    if (full) el.bopmInput.value = d.name;
+    el.bopmPrev.style.background = d.bg;
+    el.bopmFace.innerHTML = bopFace(d, 0.48);
+    this._setText(el.bopmSay, BOP_LINES[d.mood]);
+    const preset = BOP_PRESETS.some((p) => p.id === d.id), stored = this._bopSaved().some((b) => b.id === d.id);
+    el.bopmCopy.hidden = !!d.isNew;
+    el.bopmDel.hidden = !!d.isNew || (preset && !stored);
+    this._setText(el.bopmDel, this._bopDelArmed ? 'Sure?' : preset ? 'Reset' : 'Delete');
+    el.bopmDel.classList.toggle('warn', !!this._bopDelArmed);
+    this.shadowRoot.querySelectorAll('.bopm-tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === tab)));
+    const pair = (e) => `<svg viewBox="0 -12 240 144" aria-hidden="true"><g>${BOP_EYE_PATHS[e]}</g><g transform="translate(140 0)">${BOP_EYE_PATHS[e]}</g></svg>`;
+    let html;
+    if (tab === 'colour') html = BOP_COLOURS.map(([c, n]) => `<button class="bop-sw" data-k="bg" data-v="${c}" aria-label="${n}" aria-pressed="${d.bg === c}" style="background:${c}"></button>`).join('');
+    else if (tab === 'eyes') html = BOP_EYES.map((e) => `<button class="bop-opt" data-k="eye" data-v="${e}" aria-pressed="${d.eye === e}">${pair(e)}<span>${BOP_WORDS[e]}</span></button>`).join('');
+    else if (tab === 'mouth') html = BOP_MOUTHS.map((m) => `<button class="bop-opt" data-k="mouth" data-v="${m}" aria-pressed="${d.mouth === m}"><svg viewBox="0 0 180 80" style="height:34px" aria-hidden="true">${BOP_MOUTH_PATHS[m]}</svg><span>${BOP_WORDS[m]}</span></button>`).join('');
+    else if (tab === 'extras') html = BOP_EXTRAS.map((x) => `<button class="bop-opt" data-k="extras" data-v="${x}" aria-pressed="${d.extras.includes(x)}">${BOP_EXTRA_PICS[x]}<span>${BOP_WORDS[x]}</span></button>`).join('');
+    else if (tab === 'mood') html = BOP_MOODS.map(([m, n, s]) => `<button class="bop-opt wide" data-k="mood" data-v="${m}" aria-pressed="${d.mood === m}"><span>${n}</span><small>${s}</small></button>`).join('');
+    else html = BOP_VOICES.map(([v, n, s]) => `<button class="bop-voice" data-k="voice" data-v="${v}" aria-pressed="${d.voice === v}" aria-label="${n}, ${s}. Plays a sample">${n}<small>${s}</small></button>`).join('')
+      + `<p class="bopm-note">${this._config.bop_voices === false ? 'Voices are switched off for this screen.' : 'Tap a voice to hear it.'}</p>`;
+    el.bopmPanel.dataset.tab = tab;
+    el.bopmPanel.innerHTML = html;
+  }
+  _bopPick(k, v) {
+    const d = this._bopDraft;
+    if (!d) return;
+    if (k === 'extras') d.extras = BOP_EXTRAS.filter((x) => (x === v ? !d.extras.includes(v) : d.extras.includes(x)));
+    else if (k === 'bg' || k === 'eye' || k === 'mouth' || k === 'mood' || k === 'voice') d[k] = v;
+    if (k === 'voice') this._bopSample(v, `Hello, I’m ${(d.name || '').trim() || 'your new Bop'}.`);
+    this._bopDelArmed = false;
+    this._renderMaker();
+    if (this._el.shell.classList.contains('open')) this._openControls(true);
+  }
+  _copyBop() {
+    const d = this._bopDraft;
+    if (!d) return;
+    const name = this._el.bopmInput.value.trim() || d.name;
+    this._bopDraft = { ...d, extras: [...d.extras], id: this._newBop().id, name: `${name.slice(0, BOP_NAME_MAX - 2)} 2`, isNew: true };
+    this._renderMaker(true);
+    this._toast('A copy: change it, then Save');
+  }
+  async _saveBop() {
+    const d = this._bopDraft;
+    if (!d) return;
+    const bop = cleanBop({ ...d, name: this._el.bopmInput.value });
+    if (!bop) { this._toast('Give your Bop a name first'); this._el.bopmInput.focus(); return; }
+    if (d.isNew && this._bopSaved().filter((b) => !BOP_PRESETS.some((p) => p.id === b.id)).length >= BOP_MAX) { this._toast(`That’s the most Bops there can be (${BOP_MAX})`); return; }
+    if (!(await this._storeBop(bop))) return;
+    this._openMaker(null);
+    this._useBop(bop.id);
+    this._toast(`Saved. ${bop.name} is on this screen now`);
+  }
+  async _storeBop(bop) {
+    if (this._bopShared) {
+      try {
+        await this._hass.callWS({ type: 'echo_robot/bop_save', bop });
+        const list = this._bopShared.bops.filter((b) => b && b.id !== bop.id);
+        const at = this._bopShared.bops.findIndex((b) => b && b.id === bop.id);
+        list.splice(at < 0 ? list.length : at, 0, bop);
+        this._bopShared.bops = list; // the add-on sends the new list too
+        return true;
+      } catch (err) {
+        this._toast('Couldn’t save the Bop. Try again in a moment');
+        return false;
+      }
+    }
+    const list = this._bopLocal().filter((b) => b && b.id !== bop.id), at = this._bopLocal().findIndex((b) => b && b.id === bop.id);
+    list.splice(at < 0 ? list.length : at, 0, bop);
+    this._bopLocalList = list;
+    try { localStorage.setItem(BOP_LOCAL_KEY, JSON.stringify(list)); } catch (err) { /* kept for this visit */ }
+    return true;
+  }
+  // Delete a Bop that was made, or put a ready-made one back how it started. Asks once more first.
+  async _deleteBop() {
+    const d = this._bopDraft;
+    if (!d) return;
+    if (!this._bopDelArmed) { this._bopDelArmed = true; this._renderMaker(); return; }
+    this._bopDelArmed = false;
+    const preset = BOP_PRESETS.some((p) => p.id === d.id);
+    if (this._bopShared) {
+      try {
+        await this._hass.callWS({ type: 'echo_robot/bop_delete', bop_id: d.id });
+        this._bopShared.bops = this._bopShared.bops.filter((b) => b && b.id !== d.id);
+      } catch (err) { this._toast('Couldn’t do that. Try again in a moment'); this._renderMaker(); return; }
+    } else {
+      this._bopLocalList = this._bopLocal().filter((b) => b && b.id !== d.id);
+      try { localStorage.setItem(BOP_LOCAL_KEY, JSON.stringify(this._bopLocalList)); } catch (err) { /* kept for this visit */ }
+    }
+    this._applyBop();
+    if (preset) { this._bopDraft = { ...this._bopOf(d.id), extras: [...this._bopOf(d.id).extras] }; this._renderMaker(true); this._toast(`${this._bopDraft.name} is back to how it started`); return; }
+    this._openMaker(null);
+    if (this._el.shell.classList.contains('bops-open')) this._renderBops();
+    this._toast(`${d.name} is gone`);
+  }
+  // The shared list, from the echo_robot add-on. Without it (an older add-on), Bops stay on this screen.
+  _watchBops() {
+    const conn = this._hass && this._hass.connection;
+    if (this._bopSub || this._bopsMissing || !conn || typeof conn.subscribeMessage !== 'function') return;
+    this._bopSub = conn.subscribeMessage((d) => this._gotBops(d), { type: 'echo_robot/bops' }).catch((err) => {
+      this._bopSub = null;
+      this._bopsMissing = true;
+      if (!err || err.code !== 'unknown_command') {
+        clearTimeout(this._bopRetryT);
+        this._bopRetryT = setTimeout(() => { this._bopsMissing = false; this._watchBops(); }, 30000);
+      }
+      return null;
+    });
+  }
+  _stopBops() {
+    const sub = this._bopSub;
+    this._bopSub = null;
+    this._bopsMissing = false;
+    clearTimeout(this._bopRetryT);
+    if (sub) sub.then((unsub) => { if (typeof unsub === 'function') unsub(); }).catch(() => {});
+  }
+  _gotBops(d) {
+    if (!d || !Array.isArray(d.bops)) return;
+    this._bopShared = { bops: d.bops, chosen: d.chosen && typeof d.chosen === 'object' ? d.chosen : {} };
+    this._bopMoveLocal();
+    this._applyBop();
+    if (this._el.shell.classList.contains('bops-open')) this._renderBops();
+    if (this._bopDraft && this._el.shell.classList.contains('bopm-open')) this._renderMaker();
+  }
+  // Bops made on this screen before the add-on could keep them are handed over to it, once.
+  _bopMoveLocal() {
+    const local = this._bopLocal().map(cleanBop).filter(Boolean).filter((b) => !this._bopShared.bops.some((s) => s && s.id === b.id));
+    if (!local.length || this._bopMoving) return;
+    this._bopMoving = true;
+    Promise.all(local.map((bop) => this._hass.callWS({ type: 'echo_robot/bop_save', bop })))
+      .then(() => { this._bopLocalList = []; try { localStorage.removeItem(BOP_LOCAL_KEY); } catch (err) { /* nothing to tidy */ } })
+      .catch(() => {})
+      .finally(() => { this._bopMoving = false; });
+  }
+  // The device a spoken request comes from, if this screen is that device's own screen. A PC view (talk mode) borrows
+  // the Echo's, so it doesn't speak for it, unless it has a talk_device of its own.
+  _bopDevice() {
+    if (this._config.talk) return this._config.talk_device || null;
+    const ent = this._hass && this._hass.entities && this._hass.entities[this._config.satellite];
+    return (ent && ent.device_id) || null;
+  }
+  // Tells the add-on this device's Bop, so the assistant talks in its personality (see echo_robot/bops.py).
+  _bopTellServer() {
+    const device = this._bopDevice(), b = this._bopChosen();
+    if (!this._bopShared || !device || !b) return;
+    const want = { id: b.id, name: b.name, mood: b.mood, voice: b.voice };
+    const has = this._bopShared.chosen[device];
+    if (has && ['id', 'name', 'mood', 'voice'].every((k) => has[k] === want[k])) { this._bopTold = null; return; }
+    const key = device + JSON.stringify(want);
+    if (this._bopTold === key) return; // sent: waiting for the add-on's answer
+    this._bopTold = key;
+    this._hass.callWS({ type: 'echo_robot/bop_use', device_id: device, bop: want }).catch(() => { this._bopTold = null; });
+  }
+  // The Echo's "Assistant" choice: a select on the satellite's own device whose options are the voice assistants.
+  _bopAssistantSelect() {
+    const ents = this._hass && this._hass.entities;
+    if (!ents) return null;
+    if (this._bopSelectFor === ents) return this._bopSelect;
+    const sat = ents[this._config.satellite], ids = sat && sat.device_id ? Object.keys(ents).filter((id) => id.startsWith('select.') && ents[id].device_id === sat.device_id) : [];
+    const listsAssistants = (id) => { const o = this._state(id)?.attributes?.options; return Array.isArray(o) && o.includes('preferred'); };
+    this._bopSelectFor = ents;
+    this._bopSelect = ids.find((id) => /_(assistant|pipeline)$/.test(id) && listsAssistants(id)) || ids.find(listsAssistants) || null;
+    return this._bopSelect;
+  }
+  // Home Assistant keeps the voice inside the voice assistant (pipeline). So each voice gets its own copy of this Echo's
+  // assistant, the same in every way but the voice, named "<assistant> · <Voice>". The original is the one without it.
+  async _bopPipelines() {
+    const r = await this._hass.callWS({ type: 'assist_pipeline/pipeline/list' });
+    const list = r.pipelines || [], select = this._bopAssistantSelect();
+    const chosen = select ? this._state(select)?.state : null;
+    const current = (chosen && chosen !== 'preferred' && list.find((p) => p.name === chosen)) || list.find((p) => p.id === r.preferred_pipeline) || list[0];
+    const m = current && current.name.match(/^(.*) · (\w+)$/);
+    const base = (m && BOP_VOICES.some(([, n]) => n === m[2]) && list.find((p) => p.name === m[1])) || current;
+    return { list, base, current, preferred: r.preferred_pipeline, select, chosen };
+  }
+  async _bopSample(voice, text) {
+    try {
+      const { base } = await this._bopPipelines();
+      if (!base || !base.tts_engine) throw new Error('no voice service');
+      const r = await this._hass.callApi('POST', 'tts_get_url', { engine_id: base.tts_engine, message: text, language: base.tts_language || base.language, options: { voice } });
+      const url = r && (r.path && this._hass.hassUrl ? this._hass.hassUrl(r.path) : r.url);
+      if (!url) throw new Error('no sound');
+      if (this._bopAudio) this._bopAudio.pause();
+      this._bopAudio = new Audio(url);
+      await this._bopAudio.play();
+    } catch (err) {
+      this._toast('Couldn’t play that voice here');
+    }
+  }
+  // Switches this Echo to the copy of its assistant with its Bop's voice, making or refreshing the copy first.
+  // Only on the Echo's own screen, only for an admin login, and only if its voice service has that voice.
+  async _bopVoice() {
+    if (this._config.bop_voices === false || this._config.talk || !this._hass.user || !this._hass.user.is_admin) return;
+    const b = this._bopChosen();
+    if (!b || !this._bopAssistantSelect()) return;
+    const key = b.voice; // only when the Bop's voice changes (and once on opening), so a hand-picked assistant isn't fought over
+    if (key === this._bopVoiceKey) return;
+    if (this._bopVoiceBusy) { this._bopVoiceAgain = true; return; }
+    this._bopVoiceBusy = true;
+    this._bopVoiceKey = key;
+    try {
+      const p = await this._bopPipelines();
+      if (!p.base || !p.base.tts_engine) return;
+      let target = p.base;
+      if (p.base.tts_voice !== b.voice) {
+        const { voices } = await this._hass.callWS({ type: 'tts/engine/voices', engine_id: p.base.tts_engine, language: p.base.tts_language || p.base.language });
+        if (!Array.isArray(voices) || !voices.some((v) => v.voice_id === b.voice)) return; // this voice service hasn't got it
+        const voiceName = (BOP_VOICES.find(([v]) => v === b.voice) || [])[1];
+        if (!voiceName) return;
+        const fields = {};
+        for (const k of ['conversation_engine', 'conversation_language', 'language', 'stt_engine', 'stt_language', 'tts_engine', 'tts_language', 'wake_word_entity', 'wake_word_id', 'prefer_local_intents']) if (k in p.base) fields[k] = p.base[k];
+        fields.tts_voice = b.voice;
+        const name = `${p.base.name} · ${voiceName}`;
+        target = p.list.find((x) => x.name === name);
+        if (!target) target = await this._hass.callWS({ type: 'assist_pipeline/pipeline/create', name, ...fields });
+        else if (Object.keys(fields).some((k) => target[k] !== fields[k])) target = await this._hass.callWS({ type: 'assist_pipeline/pipeline/update', pipeline_id: target.id, name, ...fields });
+      }
+      const option = target.id === p.preferred ? 'preferred' : target.name; // back to the original: as it was set up
+      if (p.chosen !== option) {
+        // A new copy takes a moment to appear in the Echo's list of assistants.
+        for (let i = 0; i < 12 && !(this._state(p.select)?.attributes?.options || []).includes(option); i++) await new Promise((ok) => setTimeout(ok, 250));
+        await this._hass.callService('select', 'select_option', { entity_id: p.select, option });
+        // The words are read from the assistant's own record, so start reading the new one afresh.
+        this._pipeline = null;
+        this._priming = null;
+        this._seenRun = undefined;
+      }
+    } catch (err) {
+      console.info('Echo robot: couldn’t switch to the Bop’s voice.', err && (err.message || err.code || err));
+    } finally {
+      this._bopVoiceBusy = false;
+      if (this._bopVoiceAgain) { this._bopVoiceAgain = false; this._bopVoiceKey = null; this._bopVoice(); }
+    }
+  }
 }
 EchoHomeCard.classify = classify;
 EchoHomeCard.readRun = readRun;
@@ -5275,6 +6356,7 @@ EchoHomeCard.lyricAt = lyricAt;
 EchoHomeCard.lyricReaction = lyricReaction;
 EchoHomeCard.reactionList = REACTIONS;
 EchoHomeCard.idleList = IDLES;
+EchoHomeCard.skits = SKITS;
 EchoHomeCard.playMoments = PLAY_MOMENTS;
 EchoHomeCard.openers = OPENERS;
 EchoHomeCard.firstSpokenLength = firstSpokenLength;

@@ -1,4 +1,5 @@
-"""Reminder and alarm tools for a chat assistant (Grok, through Home Assistant's Assist tools).
+"""Reminder and alarm tools for a chat assistant (Grok, through Home Assistant's Assist tools), and the personality
+of the Bop on the screen being spoken to.
 
 Most reminder requests are understood on the server and never reach the assistant. These are for the ones
 worded differently. The reminder itself is still kept here, in Home Assistant.
@@ -114,4 +115,13 @@ class CancelAlarmTool(Tool):
 def async_get_tools(hass: HomeAssistant, llm_context: LLMContext, api_id: str) -> LLMTools | None:
     if api_id != LLM_API_ASSIST or DOMAIN not in hass.data:
         return None
-    return LLMTools(tools=[SetReminderTool(), ListRemindersTool(), CancelReminderTool(), SetAlarmTool(), ListAlarmsTool(), CancelAlarmTool()])
+    tools = [SetReminderTool(), ListRemindersTool(), CancelReminderTool(), SetAlarmTool(), ListAlarmsTool(), CancelAlarmTool()]
+    # The Bop on the screen that's being spoken to gives the assistant its personality (bops.py).
+    shelf = getattr(hass.data[DOMAIN], 'bops', None)
+    prompt = shelf.prompt_for(getattr(llm_context, 'device_id', None)) if shelf else None
+    if prompt:
+        try:
+            return LLMTools(tools=tools, prompt=prompt)
+        except TypeError:  # a Home Assistant from before tools could bring a line of instructions
+            pass
+    return LLMTools(tools=tools)

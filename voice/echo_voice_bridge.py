@@ -41,11 +41,16 @@ REMEMBER_UP_TO = 40       # short phrases this long or less are kept in memory o
 REMEMBER_BYTES = 16 * 1024 * 1024               # the most sound to keep in memory; nothing is written to disk
 WARM_RETRY_S = 60         # how long to wait before preparing the openers again, if the voice wasn't ready
 
+# The voices Home Assistant can pick: what it shows, and what Kokoro is asked for. That can be one of Kokoro's voices
+# or a blend ("bm_george(2)+am_onyx(1)" is two parts George to one part Onyx), and a speed (1 is normal).
 VOICES = {
-    'bm_fable': 'Fable (British male)',
-    'bm_george': 'George (British male)',
-    'bf_emma': 'Emma (British female)',
-    'af_heart': 'Heart (American female)',
+    'bm_fable': ('Fable (British male)', 'bm_fable', 1.0),
+    'bm_lewis': ('Lewis (British male)', 'bm_lewis', 1.0),
+    'af_sarah': ('Sarah (American female)', 'af_sarah', 1.0),
+    'af_sky': ('Sky (American female)', 'af_sky', 1.0),
+    'am_echo': ('Echo (American male)', 'am_echo', 1.0),
+    'am_onyx': ('Onyx (American male)', 'am_onyx', 1.0),
+    'am_santa': ('Santa (American male)', 'am_santa', 1.0),
 }
 DEFAULT_VOICE = 'bm_fable'
 LOG = logging.getLogger('echo-voice-bridge')
@@ -167,7 +172,7 @@ class Bridge:
             'name': 'echo-voice', 'attribution': attribution, 'installed': True,
             'description': 'Kokoro, with Piper as a backup', 'version': '1.0.0', 'supports_synthesize_streaming': True,
             'voices': [{'name': name, 'attribution': attribution, 'installed': True, 'description': description,
-                        'version': None, 'languages': ['en_GB'], 'speakers': None} for name, description in VOICES.items()],
+                        'version': None, 'languages': ['en_GB'], 'speakers': None} for name, (description, _, _) in VOICES.items()],
         }]}
 
     def _kokoro_thread(self, text, voice, loop, queue):
@@ -176,7 +181,11 @@ class Bridge:
         connection = None
         try:
             connection = http.client.HTTPConnection(self.kokoro.hostname, self.kokoro.port, timeout=FIRST_AUDIO_S)
-            body = json.dumps({'model': 'kokoro', 'input': text, 'voice': voice, 'response_format': 'pcm', 'stream': True})
+            _, kokoro_voice, speed = VOICES.get(voice, VOICES[DEFAULT_VOICE])
+            request = {'model': 'kokoro', 'input': text, 'voice': kokoro_voice, 'response_format': 'pcm', 'stream': True}
+            if speed != 1.0:
+                request['speed'] = speed
+            body = json.dumps(request)
             connection.request('POST', '/v1/audio/speech', body, {'Content-Type': 'application/json'})
             response = connection.getresponse()
             if response.status != 200:

@@ -5,7 +5,7 @@ Home Assistant's settings (secrets.yaml), and never reaches the screen's web pag
 settings can be read through this, and only by admin logins (as the Echo uses), unless admin_only is false.
 
 Immich has to be on this server or your home network: a public address is refused, so photos never travel
-over the internet. The key needs only Immich's album.read and asset.view permissions.
+over the internet. The key needs only Immich's album.read, asset.read and asset.view permissions.
 
     echo_photos:
       album: Echo Show                      # the album's name, or its id from the address bar
